@@ -4,10 +4,10 @@ import Hls from 'hls.js';
 
 function getDoubanImageProxyConfig(): {
   proxyType:
-  | 'server'
-  | 'cmliussss-cdn-tencent'
-  | 'cmliussss-cdn-ali'
-  | 'custom';
+    | 'server'
+    | 'cmliussss-cdn-tencent'
+    | 'cmliussss-cdn-ali'
+    | 'custom';
   proxyUrl: string;
 } {
   let doubanImageProxyType =
@@ -68,6 +68,7 @@ export function processImageUrl(originalUrl: string): string {
 export async function getVideoResolutionFromM3u8(m3u8Url: string): Promise<{
   quality: string; // 如720p、1080p等
   loadSpeed: string; // 自动转换为KB/s或MB/s
+  loadSpeedKBps?: number; // 保留未格式化的测速值用于列表排序
   pingTime: number; // 网络延迟（毫秒）
 }> {
   try {
@@ -119,6 +120,7 @@ export async function getVideoResolutionFromM3u8(m3u8Url: string): Promise<{
       };
 
       let actualLoadSpeed = '未知';
+      let loadSpeedKBps: number | undefined;
       let hasSpeedCalculated = false;
       let hasMetadataLoaded = false;
 
@@ -141,18 +143,19 @@ export async function getVideoResolutionFromM3u8(m3u8Url: string): Promise<{
               width >= 3840
                 ? '4K' // 4K: 3840x2160
                 : width >= 2560
-                  ? '2K' // 2K: 2560x1440
-                  : width >= 1920
-                    ? '1080p' // 1080p: 1920x1080
-                    : width >= 1280
-                      ? '720p' // 720p: 1280x720
-                      : width >= 854
-                        ? '480p'
-                        : 'SD'; // 480p: 854x480
+                ? '2K' // 2K: 2560x1440
+                : width >= 1920
+                ? '1080p' // 1080p: 1920x1080
+                : width >= 1280
+                ? '720p' // 720p: 1280x720
+                : width >= 854
+                ? '480p'
+                : 'SD'; // 480p: 854x480
 
             resolve({
               quality,
               loadSpeed: actualLoadSpeed,
+              loadSpeedKBps,
               pingTime: Math.round(pingTime),
             });
           } else {
@@ -160,6 +163,7 @@ export async function getVideoResolutionFromM3u8(m3u8Url: string): Promise<{
             resolve({
               quality: '未知',
               loadSpeed: actualLoadSpeed,
+              loadSpeedKBps,
               pingTime: Math.round(pingTime),
             });
           }
@@ -187,6 +191,7 @@ export async function getVideoResolutionFromM3u8(m3u8Url: string): Promise<{
 
             // 立即计算速度，无需等待更多分片
             const avgSpeedKBps = speedKBps;
+            loadSpeedKBps = speedKBps;
 
             if (avgSpeedKBps >= 1024) {
               actualLoadSpeed = `${(avgSpeedKBps / 1024).toFixed(1)} MB/s`;
@@ -220,7 +225,8 @@ export async function getVideoResolutionFromM3u8(m3u8Url: string): Promise<{
     });
   } catch (error) {
     throw new Error(
-      `Error getting video resolution: ${error instanceof Error ? error.message : String(error)
+      `Error getting video resolution: ${
+        error instanceof Error ? error.message : String(error)
       }`
     );
   }

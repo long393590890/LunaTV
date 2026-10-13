@@ -9,16 +9,9 @@ import React, {
   useState,
 } from 'react';
 
+import { filterAndSortSources, SourceSort, VideoInfo } from '@/lib/source-list';
 import { SearchResult } from '@/lib/types';
 import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
-
-// 定义视频信息类型
-interface VideoInfo {
-  quality: string;
-  loadSpeed: string;
-  pingTime: number;
-  hasError?: boolean; // 添加错误状态标识
-}
 
 interface EpisodeSelectorProps {
   /** 总集数 */
@@ -72,6 +65,28 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   const [attemptedSources, setAttemptedSources] = useState<Set<string>>(
     new Set()
   );
+
+  const [sourceQuery, setSourceQuery] = useState('');
+  const [sourceSort, setSourceSort] = useState<SourceSort>({
+    field: 'speed',
+    ascending: false,
+  });
+  const visibleSources = useMemo(
+    () =>
+      filterAndSortSources(
+        availableSources,
+        videoInfoMap,
+        sourceQuery,
+        sourceSort
+      ),
+    [availableSources, videoInfoMap, sourceQuery, sourceSort]
+  );
+  const toggleSourceSort = (field: SourceSort['field']) => {
+    setSourceSort((prev) => ({
+      field,
+      ascending: prev.field === field ? !prev.ascending : field === 'latency',
+    }));
+  };
 
   // 使用 ref 来避免闭包问题
   const attemptedSourcesRef = useRef<Set<string>>(new Set());
@@ -245,27 +260,33 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   const [isCategoryHovered, setIsCategoryHovered] = useState(false);
 
   // 阻止页面竖向滚动
-  const preventPageScroll = useCallback((e: WheelEvent) => {
-    if (isCategoryHovered) {
-      e.preventDefault();
-    }
-  }, [isCategoryHovered]);
+  const preventPageScroll = useCallback(
+    (e: WheelEvent) => {
+      if (isCategoryHovered) {
+        e.preventDefault();
+      }
+    },
+    [isCategoryHovered]
+  );
 
   // 处理滚轮事件，实现横向滚动
-  const handleWheel = useCallback((e: WheelEvent) => {
-    if (isCategoryHovered && categoryContainerRef.current) {
-      e.preventDefault(); // 阻止默认的竖向滚动
+  const handleWheel = useCallback(
+    (e: WheelEvent) => {
+      if (isCategoryHovered && categoryContainerRef.current) {
+        e.preventDefault(); // 阻止默认的竖向滚动
 
-      const container = categoryContainerRef.current;
-      const scrollAmount = e.deltaY * 2; // 调整滚动速度
+        const container = categoryContainerRef.current;
+        const scrollAmount = e.deltaY * 2; // 调整滚动速度
 
-      // 根据滚轮方向进行横向滚动
-      container.scrollBy({
-        left: scrollAmount,
-        behavior: 'smooth'
-      });
-    }
-  }, [isCategoryHovered]);
+        // 根据滚轮方向进行横向滚动
+        container.scrollBy({
+          left: scrollAmount,
+          behavior: 'smooth',
+        });
+      }
+    },
+    [isCategoryHovered]
+  );
 
   // 添加全局wheel事件监听器
   useEffect(() => {
@@ -356,9 +377,10 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
           <div
             onClick={() => setActiveTab('episodes')}
             className={`flex-1 py-3 px-6 text-center cursor-pointer transition-all duration-200 font-medium
-              ${activeTab === 'episodes'
-                ? 'text-green-600 dark:text-green-400'
-                : 'text-gray-700 hover:text-green-600 bg-black/5 dark:bg-white/5 dark:text-gray-300 dark:hover:text-green-400 hover:bg-black/3 dark:hover:bg-white/3'
+              ${
+                activeTab === 'episodes'
+                  ? 'text-green-600 dark:text-green-400'
+                  : 'text-gray-700 hover:text-green-600 bg-black/5 dark:bg-white/5 dark:text-gray-300 dark:hover:text-green-400 hover:bg-black/3 dark:hover:bg-white/3'
               }
             `.trim()}
           >
@@ -368,9 +390,10 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
         <div
           onClick={handleSourceTabClick}
           className={`flex-1 py-3 px-6 text-center cursor-pointer transition-all duration-200 font-medium
-            ${activeTab === 'sources'
-              ? 'text-green-600 dark:text-green-400'
-              : 'text-gray-700 hover:text-green-600 bg-black/5 dark:bg-white/5 dark:text-gray-300 dark:hover:text-green-400 hover:bg-black/3 dark:hover:bg-white/3'
+            ${
+              activeTab === 'sources'
+                ? 'text-green-600 dark:text-green-400'
+                : 'text-gray-700 hover:text-green-600 bg-black/5 dark:bg-white/5 dark:text-gray-300 dark:hover:text-green-400 hover:bg-black/3 dark:hover:bg-white/3'
             }
           `.trim()}
         >
@@ -400,9 +423,10 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                       }}
                       onClick={() => handleCategoryClick(idx)}
                       className={`w-20 relative py-2 text-sm font-medium transition-colors whitespace-nowrap flex-shrink-0 text-center 
-                        ${isActive
-                          ? 'text-green-500 dark:text-green-400'
-                          : 'text-gray-700 hover:text-green-600 dark:text-gray-300 dark:hover:text-green-400'
+                        ${
+                          isActive
+                            ? 'text-green-500 dark:text-green-400'
+                            : 'text-gray-700 hover:text-green-600 dark:text-gray-300 dark:hover:text-green-400'
                         }
                       `.trim()}
                     >
@@ -454,9 +478,10 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                   key={episodeNumber}
                   onClick={() => handleEpisodeClick(episodeNumber - 1)}
                   className={`h-10 min-w-10 px-3 py-2 flex items-center justify-center text-sm font-medium rounded-md transition-all duration-200 whitespace-nowrap font-mono
-                    ${isActive
-                      ? 'bg-green-500 text-white shadow-lg shadow-green-500/25 dark:bg-green-600'
-                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300 hover:scale-105 dark:bg-white/10 dark:text-gray-300 dark:hover:bg-white/20'
+                    ${
+                      isActive
+                        ? 'bg-green-500 text-white shadow-lg shadow-green-500/25 dark:bg-green-600'
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300 hover:scale-105 dark:bg-white/10 dark:text-gray-300 dark:hover:bg-white/20'
                     }`.trim()}
                 >
                   {(() => {
@@ -480,7 +505,39 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
 
       {/* 换源 Tab 内容 */}
       {activeTab === 'sources' && (
-        <div className='flex flex-col h-full mt-4'>
+        <div className='flex flex-col flex-1 min-h-0 mt-4'>
+          <div className='flex flex-wrap items-center gap-2 mb-3 flex-shrink-0'>
+            <input
+              type='search'
+              aria-label='搜索源名称'
+              placeholder='搜索源名称'
+              value={sourceQuery}
+              onChange={(e) => setSourceQuery(e.target.value)}
+              className='min-w-0 flex-1 basis-24 rounded-md border border-gray-300 dark:border-gray-600 bg-white/60 dark:bg-white/10 px-2 py-1.5 text-sm text-gray-900 dark:text-gray-100'
+            />
+            <div className='flex gap-1 ml-auto flex-shrink-0'>
+              {(['speed', 'latency'] as const).map((field) => (
+                <button
+                  key={field}
+                  type='button'
+                  aria-pressed={sourceSort.field === field}
+                  onClick={() => toggleSourceSort(field)}
+                  className={`px-2 py-1.5 rounded-md text-sm whitespace-nowrap ${
+                    sourceSort.field === field
+                      ? 'bg-green-500/15 text-green-700 dark:text-green-400'
+                      : 'text-gray-600 dark:text-gray-300 hover:bg-gray-200/50 dark:hover:bg-white/10'
+                  }`}
+                >
+                  {field === 'speed' ? '网速' : '延迟'}
+                  {sourceSort.field === field
+                    ? sourceSort.ascending
+                      ? ' ↑'
+                      : ' ↓'
+                    : ''}
+                </button>
+              ))}
+            </div>
+          </div>
           {sourceSearchLoading && (
             <div className='flex items-center justify-center py-8'>
               <div className='animate-spin rounded-full h-8 w-8 border-b-2 border-green-500'></div>
@@ -518,147 +575,144 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
             !sourceSearchError &&
             availableSources.length > 0 && (
               <div className='flex-1 overflow-y-auto space-y-2 pb-20'>
-                {availableSources
-                  .sort((a, b) => {
-                    const aIsCurrent =
-                      a.source?.toString() === currentSource?.toString() &&
-                      a.id?.toString() === currentId?.toString();
-                    const bIsCurrent =
-                      b.source?.toString() === currentSource?.toString() &&
-                      b.id?.toString() === currentId?.toString();
-                    if (aIsCurrent && !bIsCurrent) return -1;
-                    if (!aIsCurrent && bIsCurrent) return 1;
-                    return 0;
-                  })
-                  .map((source, index) => {
-                    const isCurrentSource =
-                      source.source?.toString() === currentSource?.toString() &&
-                      source.id?.toString() === currentId?.toString();
-                    return (
-                      <div
-                        key={`${source.source}-${source.id}`}
-                        onClick={() =>
-                          !isCurrentSource && handleSourceClick(source)
-                        }
-                        className={`flex items-start gap-3 px-2 py-3 rounded-lg transition-all select-none duration-200 relative
-                      ${isCurrentSource
-                            ? 'bg-green-500/10 dark:bg-green-500/20 border-green-500/30 border'
-                            : 'hover:bg-gray-200/50 dark:hover:bg-white/10 hover:scale-[1.02] cursor-pointer'
-                          }`.trim()}
-                      >
-                        {/* 封面 */}
-                        <div className='flex-shrink-0 w-12 h-20 bg-gray-300 dark:bg-gray-600 rounded overflow-hidden'>
-                          {source.episodes && source.episodes.length > 0 && (
-                            <img
-                              src={processImageUrl(source.poster)}
-                              alt={source.title}
-                              className='w-full h-full object-cover'
-                              onError={(e) => {
-                                const target = e.target as HTMLImageElement;
-                                target.style.display = 'none';
-                              }}
-                            />
+                {visibleSources.length === 0 && (
+                  <p
+                    role='status'
+                    className='py-8 text-center text-sm text-gray-600 dark:text-gray-300'
+                  >
+                    没有匹配的源名称
+                  </p>
+                )}
+                {visibleSources.map((source, index) => {
+                  const isCurrentSource =
+                    source.source?.toString() === currentSource?.toString() &&
+                    source.id?.toString() === currentId?.toString();
+                  return (
+                    <div
+                      key={`${source.source}-${source.id}`}
+                      onClick={() =>
+                        !isCurrentSource && handleSourceClick(source)
+                      }
+                      className={`flex items-start gap-3 px-2 py-3 rounded-lg transition-all select-none duration-200 relative
+                      ${
+                        isCurrentSource
+                          ? 'bg-green-500/10 dark:bg-green-500/20 border-green-500/30 border'
+                          : 'hover:bg-gray-200/50 dark:hover:bg-white/10 hover:scale-[1.02] cursor-pointer'
+                      }`.trim()}
+                    >
+                      {/* 封面 */}
+                      <div className='flex-shrink-0 w-12 h-20 bg-gray-300 dark:bg-gray-600 rounded overflow-hidden'>
+                        {source.episodes && source.episodes.length > 0 && (
+                          <img
+                            src={processImageUrl(source.poster)}
+                            alt={source.title}
+                            className='w-full h-full object-cover'
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              target.style.display = 'none';
+                            }}
+                          />
+                        )}
+                      </div>
+
+                      {/* 信息区域 */}
+                      <div className='flex-1 min-w-0 flex flex-col justify-between h-20'>
+                        {/* 标题和分辨率 - 顶部 */}
+                        <div className='flex items-start justify-between gap-3 h-6'>
+                          <div className='flex-1 min-w-0 relative group/title'>
+                            <h3 className='font-medium text-base truncate text-gray-900 dark:text-gray-100 leading-none'>
+                              {source.title}
+                            </h3>
+                            {/* 标题级别的 tooltip - 第一个元素不显示 */}
+                            {index !== 0 && (
+                              <div className='absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-1 bg-gray-800 text-white text-xs rounded-md shadow-lg opacity-0 invisible group-hover/title:opacity-100 group-hover/title:visible transition-all duration-200 ease-out delay-100 whitespace-nowrap z-[500] pointer-events-none'>
+                                {source.title}
+                                <div className='absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-800'></div>
+                              </div>
+                            )}
+                          </div>
+                          {(() => {
+                            const sourceKey = `${source.source}-${source.id}`;
+                            const videoInfo = videoInfoMap.get(sourceKey);
+
+                            if (videoInfo && videoInfo.quality !== '未知') {
+                              if (videoInfo.hasError) {
+                                return (
+                                  <div className='bg-gray-500/10 dark:bg-gray-400/20 text-red-600 dark:text-red-400 px-1.5 py-0 rounded text-xs flex-shrink-0 min-w-[50px] text-center'>
+                                    检测失败
+                                  </div>
+                                );
+                              } else {
+                                // 根据分辨率设置不同颜色：2K、4K为紫色，1080p、720p为绿色，其他为黄色
+                                const isUltraHigh = ['4K', '2K'].includes(
+                                  videoInfo.quality
+                                );
+                                const isHigh = ['1080p', '720p'].includes(
+                                  videoInfo.quality
+                                );
+                                const textColorClasses = isUltraHigh
+                                  ? 'text-purple-600 dark:text-purple-400'
+                                  : isHigh
+                                  ? 'text-green-600 dark:text-green-400'
+                                  : 'text-yellow-600 dark:text-yellow-400';
+
+                                return (
+                                  <div
+                                    className={`bg-gray-500/10 dark:bg-gray-400/20 ${textColorClasses} px-1.5 py-0 rounded text-xs flex-shrink-0 min-w-[50px] text-center`}
+                                  >
+                                    {videoInfo.quality}
+                                  </div>
+                                );
+                              }
+                            }
+
+                            return null;
+                          })()}
+                        </div>
+
+                        {/* 源名称和集数信息 - 垂直居中 */}
+                        <div className='flex items-center justify-between'>
+                          <span className='text-xs px-2 py-1 border border-gray-500/60 rounded text-gray-700 dark:text-gray-300'>
+                            {source.source_name}
+                          </span>
+                          {source.episodes.length > 1 && (
+                            <span className='text-xs text-gray-500 dark:text-gray-400 font-medium'>
+                              {source.episodes.length} 集
+                            </span>
                           )}
                         </div>
 
-                        {/* 信息区域 */}
-                        <div className='flex-1 min-w-0 flex flex-col justify-between h-20'>
-                          {/* 标题和分辨率 - 顶部 */}
-                          <div className='flex items-start justify-between gap-3 h-6'>
-                            <div className='flex-1 min-w-0 relative group/title'>
-                              <h3 className='font-medium text-base truncate text-gray-900 dark:text-gray-100 leading-none'>
-                                {source.title}
-                              </h3>
-                              {/* 标题级别的 tooltip - 第一个元素不显示 */}
-                              {index !== 0 && (
-                                <div className='absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-1 bg-gray-800 text-white text-xs rounded-md shadow-lg opacity-0 invisible group-hover/title:opacity-100 group-hover/title:visible transition-all duration-200 ease-out delay-100 whitespace-nowrap z-[500] pointer-events-none'>
-                                  {source.title}
-                                  <div className='absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-800'></div>
-                                </div>
-                              )}
-                            </div>
-                            {(() => {
-                              const sourceKey = `${source.source}-${source.id}`;
-                              const videoInfo = videoInfoMap.get(sourceKey);
-
-                              if (videoInfo && videoInfo.quality !== '未知') {
-                                if (videoInfo.hasError) {
-                                  return (
-                                    <div className='bg-gray-500/10 dark:bg-gray-400/20 text-red-600 dark:text-red-400 px-1.5 py-0 rounded text-xs flex-shrink-0 min-w-[50px] text-center'>
-                                      检测失败
+                        {/* 网络信息 - 底部 */}
+                        <div className='flex items-end h-6'>
+                          {(() => {
+                            const sourceKey = `${source.source}-${source.id}`;
+                            const videoInfo = videoInfoMap.get(sourceKey);
+                            if (videoInfo) {
+                              if (!videoInfo.hasError) {
+                                return (
+                                  <div className='flex items-end gap-3 text-xs'>
+                                    <div className='text-green-600 dark:text-green-400 font-medium text-xs'>
+                                      {videoInfo.loadSpeed}
                                     </div>
-                                  );
-                                } else {
-                                  // 根据分辨率设置不同颜色：2K、4K为紫色，1080p、720p为绿色，其他为黄色
-                                  const isUltraHigh = ['4K', '2K'].includes(
-                                    videoInfo.quality
-                                  );
-                                  const isHigh = ['1080p', '720p'].includes(
-                                    videoInfo.quality
-                                  );
-                                  const textColorClasses = isUltraHigh
-                                    ? 'text-purple-600 dark:text-purple-400'
-                                    : isHigh
-                                      ? 'text-green-600 dark:text-green-400'
-                                      : 'text-yellow-600 dark:text-yellow-400';
-
-                                  return (
-                                    <div
-                                      className={`bg-gray-500/10 dark:bg-gray-400/20 ${textColorClasses} px-1.5 py-0 rounded text-xs flex-shrink-0 min-w-[50px] text-center`}
-                                    >
-                                      {videoInfo.quality}
+                                    <div className='text-orange-600 dark:text-orange-400 font-medium text-xs'>
+                                      {videoInfo.pingTime}ms
                                     </div>
-                                  );
-                                }
+                                  </div>
+                                );
+                              } else {
+                                return (
+                                  <div className='text-red-500/90 dark:text-red-400 font-medium text-xs'>
+                                    无测速数据
+                                  </div>
+                                ); // 占位div
                               }
-
-                              return null;
-                            })()}
-                          </div>
-
-                          {/* 源名称和集数信息 - 垂直居中 */}
-                          <div className='flex items-center justify-between'>
-                            <span className='text-xs px-2 py-1 border border-gray-500/60 rounded text-gray-700 dark:text-gray-300'>
-                              {source.source_name}
-                            </span>
-                            {source.episodes.length > 1 && (
-                              <span className='text-xs text-gray-500 dark:text-gray-400 font-medium'>
-                                {source.episodes.length} 集
-                              </span>
-                            )}
-                          </div>
-
-                          {/* 网络信息 - 底部 */}
-                          <div className='flex items-end h-6'>
-                            {(() => {
-                              const sourceKey = `${source.source}-${source.id}`;
-                              const videoInfo = videoInfoMap.get(sourceKey);
-                              if (videoInfo) {
-                                if (!videoInfo.hasError) {
-                                  return (
-                                    <div className='flex items-end gap-3 text-xs'>
-                                      <div className='text-green-600 dark:text-green-400 font-medium text-xs'>
-                                        {videoInfo.loadSpeed}
-                                      </div>
-                                      <div className='text-orange-600 dark:text-orange-400 font-medium text-xs'>
-                                        {videoInfo.pingTime}ms
-                                      </div>
-                                    </div>
-                                  );
-                                } else {
-                                  return (
-                                    <div className='text-red-500/90 dark:text-red-400 font-medium text-xs'>
-                                      无测速数据
-                                    </div>
-                                  ); // 占位div
-                                }
-                              }
-                            })()}
-                          </div>
+                            }
+                          })()}
                         </div>
                       </div>
-                    );
-                  })}
+                    </div>
+                  );
+                })}
                 <div className='flex-shrink-0 mt-auto pt-2 border-t border-gray-400 dark:border-gray-700'>
                   <button
                     onClick={() => {
