@@ -9,6 +9,7 @@ import {
   getAllPlayRecords,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
+import { splitStorageKey } from '@/lib/storage-key';
 
 import ScrollableRow from '@/components/ScrollableRow';
 import VideoCard from '@/components/VideoCard';
@@ -81,7 +82,7 @@ export default function ContinueWatching({ className }: ContinueWatchingProps) {
 
   // 从 key 中解析 source 和 id
   const parseKey = (key: string) => {
-    const [source, id] = key.split('+');
+    const [source, id] = splitStorageKey(key);
     return { source, id };
   };
 

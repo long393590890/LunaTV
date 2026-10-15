@@ -298,6 +298,12 @@ interface SiteConfig {
 
 // 视频源数据类型
 interface DataSource {
+  protocol?: 'cms' | 'catjs' | 'csp';
+  runnerSite?: string;
+  runtimeStatus?: string;
+  spider?: string;
+  ext?: unknown;
+  siteType?: number;
   name: string;
   key: string;
   api: string;
@@ -2514,6 +2520,7 @@ const VideoSourceConfig = ({
   const [sources, setSources] = useState<DataSource[]>([]);
   const [showAddForm, setShowAddForm] = useState(false);
   const [orderChanged, setOrderChanged] = useState(false);
+  const [editingSourceKey, setEditingSourceKey] = useState<string | null>(null);
   const [newSource, setNewSource] = useState<DataSource>({
     name: '',
     key: '',
@@ -2556,7 +2563,13 @@ const VideoSourceConfig = ({
     Array<{
       key: string;
       name: string;
-      status: 'valid' | 'no_results' | 'invalid' | 'validating';
+      status:
+        | 'valid'
+        | 'no_results'
+        | 'invalid'
+        | 'validating'
+        | 'runtime_unconfigured'
+        | 'unsupported';
       message: string;
       resultCount: number;
     }>
@@ -2633,11 +2646,13 @@ const VideoSourceConfig = ({
     if (!newSource.name || !newSource.key || !newSource.api) return;
     withLoading('addSource', async () => {
       await callSourceApi({
-        action: 'add',
-        key: newSource.key,
+        action: editingSourceKey ? 'update' : 'add',
+        key: editingSourceKey || newSource.key,
         name: newSource.name,
         api: newSource.api,
         detail: newSource.detail,
+        protocol: newSource.protocol || 'cms',
+        runnerSite: newSource.runnerSite || '',
       });
       setNewSource({
         name: '',
@@ -2648,6 +2663,7 @@ const VideoSourceConfig = ({
         from: 'custom',
       });
       setShowAddForm(false);
+      setEditingSourceKey(null);
     }).catch(() => {
       console.error('操作失败', 'add', newSource);
     });
@@ -2737,6 +2753,10 @@ const VideoSourceConfig = ({
                                 ? '搜索正常'
                                 : data.status === 'no_results'
                                 ? '无法搜索到结果'
+                                : data.status === 'runtime_unconfigured'
+                                ? '运行器未配置'
+                                : data.status === 'unsupported'
+                                ? '协议暂不支持'
                                 : '连接失败',
                             resultCount: data.status === 'valid' ? 1 : 0,
                           }
@@ -2756,6 +2776,10 @@ const VideoSourceConfig = ({
                             ? '搜索正常'
                             : data.status === 'no_results'
                             ? '无法搜索到结果'
+                            : data.status === 'runtime_unconfigured'
+                            ? '运行器未配置'
+                            : data.status === 'unsupported'
+                            ? '协议暂不支持'
                             : '连接失败',
                         resultCount: data.status === 'valid' ? 1 : 0,
                       },
@@ -2842,6 +2866,18 @@ const VideoSourceConfig = ({
           icon: '⚠',
           message: result.message,
         };
+      case 'runtime_unconfigured':
+      case 'unsupported':
+        return {
+          text:
+            result.status === 'runtime_unconfigured'
+              ? '运行器未配置'
+              : '暂不支持',
+          className:
+            'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300',
+          icon: '',
+          message: result.message,
+        };
       case 'invalid':
         return {
           text: '无效',
@@ -2889,6 +2925,11 @@ const VideoSourceConfig = ({
         </td>
         <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100'>
           {source.name}
+          <div className='text-xs text-gray-500'>
+            {(source.protocol || 'cms').toUpperCase()}
+            {source.runnerSite ? ` · ${source.runnerSite}` : ''}
+            {source.runtimeStatus ? ` · ${source.runtimeStatus}` : ''}
+          </div>
         </td>
         <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100'>
           {source.key}
@@ -2937,6 +2978,16 @@ const VideoSourceConfig = ({
           })()}
         </td>
         <td className='px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2'>
+          <button
+            className={buttonStyles.roundedSecondary}
+            onClick={() => {
+              setNewSource({ ...source });
+              setEditingSourceKey(source.key);
+              setShowAddForm(true);
+            }}
+          >
+            编辑
+          </button>
           <button
             onClick={() => handleToggleEnable(source.key)}
             disabled={isLoading(`toggleSource_${source.key}`)}
@@ -3160,7 +3211,18 @@ const VideoSourceConfig = ({
               )}
             </button>
             <button
-              onClick={() => setShowAddForm(!showAddForm)}
+              onClick={() => {
+                setEditingSourceKey(null);
+                setNewSource({
+                  name: '',
+                  key: '',
+                  api: '',
+                  detail: '',
+                  from: 'custom',
+                  protocol: 'cms',
+                });
+                setShowAddForm(!showAddForm);
+              }}
               className={
                 showAddForm ? buttonStyles.secondary : buttonStyles.success
               }
@@ -3186,6 +3248,7 @@ const VideoSourceConfig = ({
             <input
               type='text'
               placeholder='Key'
+              disabled={!!editingSourceKey}
               value={newSource.key}
               onChange={(e) =>
                 setNewSource((prev) => ({ ...prev, key: e.target.value }))
@@ -3194,7 +3257,7 @@ const VideoSourceConfig = ({
             />
             <input
               type='text'
-              placeholder='API 地址'
+              placeholder='CMS API / 运行器地址'
               value={newSource.api}
               onChange={(e) =>
                 setNewSource((prev) => ({ ...prev, api: e.target.value }))
@@ -3204,13 +3267,46 @@ const VideoSourceConfig = ({
             <input
               type='text'
               placeholder='Detail 地址（选填）'
-              value={newSource.detail}
+              value={newSource.detail || ''}
               onChange={(e) =>
                 setNewSource((prev) => ({ ...prev, detail: e.target.value }))
               }
               className='px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100'
             />
+            <select
+              aria-label='视频源协议'
+              value={newSource.protocol || 'cms'}
+              onChange={(e) =>
+                setNewSource((prev) => ({
+                  ...prev,
+                  protocol: e.target.value as DataSource['protocol'],
+                }))
+              }
+              className='px-3 py-2 border rounded-lg bg-white dark:bg-gray-800'
+            >
+              <option value='cms'>CMS API</option>
+              <option value='catjs'>猫源 JS 运行器</option>
+              <option value='csp'>CSP / JAR 桥接运行器</option>
+            </select>
+            <input
+              aria-label='运行器站点标识'
+              placeholder='runnerSite（运行器站点标识）'
+              value={newSource.runnerSite || ''}
+              onChange={(e) =>
+                setNewSource((prev) => ({
+                  ...prev,
+                  runnerSite: e.target.value,
+                }))
+              }
+              className='px-3 py-2 border rounded-lg bg-white dark:bg-gray-800'
+            />
           </div>
+          <p className='text-xs text-gray-500'>
+            JS 源需要独立猫源运行器；CSP / JAR 需要兼容的 Android / JVM
+            桥接服务。API 填运行器地址，runnerSite
+            填运行器内站点标识。导入配置不代表已具备运行环境或可播放，浏览器不会直接执行脚本或
+            JAR。
+          </p>
           <div className='flex justify-end'>
             <button
               onClick={handleAddSource}
@@ -3229,7 +3325,11 @@ const VideoSourceConfig = ({
                   : buttonStyles.success
               }`}
             >
-              {isLoading('addSource') ? '添加中...' : '添加'}
+              {isLoading('addSource')
+                ? '保存中...'
+                : editingSourceKey
+                ? '保存修改'
+                : '添加'}
             </button>
           </div>
         </div>

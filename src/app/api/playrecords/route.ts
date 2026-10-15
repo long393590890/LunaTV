@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { getConfig } from '@/lib/config';
 import { db } from '@/lib/db';
+import { splitStorageKey } from '@/lib/storage-key';
 import { PlayRecord } from '@/lib/types';
 
 export const runtime = 'nodejs';
@@ -83,7 +84,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 从key中解析source和id
-    const [source, id] = key.split('+');
+    const [source, id] = splitStorageKey(key);
     if (!source || !id) {
       return NextResponse.json(
         { error: 'Invalid key format' },
@@ -136,7 +137,7 @@ export async function DELETE(request: NextRequest) {
 
     if (key) {
       // 如果提供了 key，删除单条播放记录
-      const [source, id] = key.split('+');
+      const [source, id] = splitStorageKey(key);
       if (!source || !id) {
         return NextResponse.json(
           { error: 'Invalid key format' },

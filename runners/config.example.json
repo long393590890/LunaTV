@@ -1,0 +1,30 @@
+{
+  "runtimes": {
+    "reviewed-cat": {
+      "scriptPath": "/sources/reviewed-source.cjs",
+      "sha256": "REPLACE_WITH_REVIEWED_LOCAL_FILE_SHA256",
+      "workDirectory": "./data/reviewed-cat",
+      "dependencyDirectory": "/sources/node_modules",
+      "config": { "color": [] }
+    }
+  },
+  "sites": [
+    {
+      "key": "cat-guazi",
+      "kind": "catjs",
+      "runtime": "reviewed-cat",
+      "upstreamKey": "guazi",
+      "init": {}
+    },
+    {
+      "key": "android-demo",
+      "kind": "csp",
+      "api": "csp_Demo",
+      "ext": {},
+      "spider": "REPLACE_WITH_AUTHORIZED_SPIDER_URL_AND_CHECKSUM",
+      "parses": [],
+      "flags": [],
+      "baseUrl": "REPLACE_WITH_ORIGINAL_CONFIG_URL"
+    }
+  ]
+}

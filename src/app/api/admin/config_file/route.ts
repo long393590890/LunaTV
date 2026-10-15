@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { getConfig, refineConfig } from '@/lib/config';
+import { parseConfigSubscription } from '@/lib/config-subscription';
 import { db } from '@/lib/db';
 
 export const runtime = 'nodejs';
@@ -48,17 +49,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 验证 JSON 格式
     try {
-      JSON.parse(configFile);
-    } catch (e) {
+      adminConfig.ConfigFile = await parseConfigSubscription(
+        configFile,
+        subscriptionUrl ?? adminConfig.ConfigSubscribtion?.URL
+      );
+    } catch (error) {
       return NextResponse.json(
-        { error: '配置文件格式错误，请检查 JSON 语法' },
+        { error: error instanceof Error ? error.message : '配置文件格式错误' },
         { status: 400 }
       );
     }
-
-    adminConfig.ConfigFile = configFile;
     if (!adminConfig.ConfigSubscribtion) {
       adminConfig.ConfigSubscribtion = {
         URL: '',

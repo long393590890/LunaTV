@@ -3,6 +3,8 @@
 
 const nextConfig = {
   output: 'standalone',
+  // 独立验收目录仅用于本地排查，不覆盖已有构建产物。
+  distDir: process.env.LUNATV_BUILD_DIR || '.next',
   eslint: {
     dirs: ['src'],
   },
@@ -11,6 +13,8 @@ const nextConfig = {
   swcMinify: false,
 
   experimental: {
+    // Windows 本地串行构建，降低多个 worker 同时启动的资源开销。
+    ...(process.platform === 'win32' ? { cpus: 1 } : {}),
     instrumentationHook: process.env.NODE_ENV === 'production',
   },
 

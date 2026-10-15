@@ -42,7 +42,10 @@ export async function POST(request: NextRequest) {
 
     let decodedContent: string;
     try {
-      decodedContent = await parseConfigSubscription(configContent);
+      decodedContent = await parseConfigSubscription(
+        configContent,
+        response.url || url
+      );
     } catch (error) {
       return NextResponse.json(
         { error: error instanceof Error ? error.message : '订阅配置解析失败' },

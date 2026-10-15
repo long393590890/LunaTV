@@ -9,6 +9,11 @@ import React, {
   useState,
 } from 'react';
 
+import {
+  ensureDetail,
+  getDefaultPlayLine,
+  resolveVideo,
+} from '@/lib/resolveVideo';
 import { filterAndSortSources, SourceSort, VideoInfo } from '@/lib/source-list';
 import { SearchResult } from '@/lib/types';
 import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
@@ -28,6 +33,7 @@ interface EpisodeSelectorProps {
   onSourceChange?: (source: string, id: string, title: string) => void;
   currentSource?: string;
   currentId?: string;
+  allowCurrentSourceRetry?: boolean;
   videoTitle?: string;
   videoYear?: string;
   availableSources?: SearchResult[];
@@ -49,6 +55,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   onSourceChange,
   currentSource,
   currentId,
+  allowCurrentSourceRetry = false,
   videoTitle,
   availableSources = [],
   sourceSearchLoading = false,
@@ -131,18 +138,18 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
       return;
     }
 
-    // 获取第一集的URL
-    if (!source.episodes || source.episodes.length === 0) {
-      return;
-    }
-    const episodeUrl =
-      source.episodes.length > 1 ? source.episodes[1] : source.episodes[0];
-
-    // 标记为已尝试
+    // 原始播放 ID 必须先获取详情并解析，不可直接交给测速器。
+    attemptedSourcesRef.current.add(sourceKey);
     setAttemptedSources((prev) => new Set(prev).add(sourceKey));
 
     try {
-      const info = await getVideoResolutionFromM3u8(episodeUrl);
+      const fullDetail = await ensureDetail(source);
+      const episodeUrl = await resolveVideo(
+        fullDetail,
+        fullDetail.episodes.length > 1 ? 1 : 0,
+        getDefaultPlayLine(fullDetail)
+      );
+      const info = await getVideoResolutionFromM3u8(episodeUrl.url);
       setVideoInfoMap((prev) => new Map(prev).set(sourceKey, info));
     } catch (error) {
       // 失败时保存错误状态
@@ -590,9 +597,10 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                   return (
                     <div
                       key={`${source.source}-${source.id}`}
-                      onClick={() =>
-                        !isCurrentSource && handleSourceClick(source)
-                      }
+                      onClick={() => {
+                        if (!isCurrentSource || allowCurrentSourceRetry)
+                          handleSourceClick(source);
+                      }}
                       className={`flex items-start gap-3 px-2 py-3 rounded-lg transition-all select-none duration-200 relative
                       ${
                         isCurrentSource

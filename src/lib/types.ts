@@ -107,6 +107,9 @@ export interface SearchResult {
   desc?: string;
   type_name?: string;
   douban_id?: number;
+  detailLoaded?: boolean;
+  mediaType?: 'movie' | 'tv' | 'unknown';
+  playLines?: Array<{ name: string; episodes: string[]; titles: string[] }>;
 }
 
 // 豆瓣数据结构

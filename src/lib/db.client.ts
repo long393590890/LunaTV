@@ -15,6 +15,7 @@
  */
 
 import { getAuthInfoFromBrowserCookie } from './auth';
+import { generateStorageKey } from './storage-key';
 import { SkipConfig } from './types';
 
 // 全局错误触发函数
@@ -490,12 +491,7 @@ async function fetchFromApi<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
-/**
- * 生成存储key
- */
-export function generateStorageKey(source: string, id: string): string {
-  return `${source}+${id}`;
-}
+export { generateStorageKey } from './storage-key';
 
 // ---- API ----
 /**
@@ -1359,7 +1355,7 @@ export function subscribeToDataUpdates<T>(
   callback: (data: T) => void
 ): () => void {
   if (typeof window === 'undefined') {
-    return () => { };
+    return () => {};
   }
 
   const handleUpdate = (event: CustomEvent) => {

@@ -36,6 +36,12 @@ export interface AdminConfig {
     name: string;
     api: string;
     detail?: string;
+    protocol?: 'cms' | 'catjs' | 'csp';
+    runnerSite?: string;
+    spider?: string;
+    ext?: unknown;
+    siteType?: number;
+    runtimeStatus?: string;
     from: 'config' | 'custom';
     disabled?: boolean;
   }[];
@@ -49,7 +55,7 @@ export interface AdminConfig {
   LiveConfig?: {
     key: string;
     name: string;
-    url: string;  // m3u 地址
+    url: string; // m3u 地址
     ua?: string;
     epg?: string; // 节目单
     from: 'config' | 'custom';

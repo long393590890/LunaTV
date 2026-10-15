@@ -7,6 +7,7 @@ import { parseConfigSubscription } from '@/lib/config-subscription';
 import { db } from '@/lib/db';
 import { fetchVideoDetail } from '@/lib/fetchVideoDetail';
 import { refreshLiveChannels } from '@/lib/live';
+import { splitStorageKey } from '@/lib/storage-key';
 import { SearchResult } from '@/lib/types';
 
 export const runtime = 'nodejs';
@@ -117,7 +118,10 @@ async function refreshConfig() {
 
       const configContent = await response.text();
 
-      const decodedContent = await parseConfigSubscription(configContent);
+      const decodedContent = await parseConfigSubscription(
+        configContent,
+        response.url || config.ConfigSubscribtion.URL
+      );
       config.ConfigFile = decodedContent;
       config.ConfigSubscribtion.LastCheck = new Date().toISOString();
       config = refineConfig(config);
@@ -201,7 +205,7 @@ async function refreshRecordAndFavorites() {
 
         const tasks = entries.map(([key, record]) => async () => {
           try {
-            const [source, id] = key.split('+');
+            const [source, id] = splitStorageKey(key);
             if (!source || !id) {
               console.warn(`跳过无效的播放记录键: ${key}`);
               return;
@@ -256,7 +260,7 @@ async function refreshRecordAndFavorites() {
 
         const tasks = favEntries.map(([key, fav]) => async () => {
           try {
-            const [source, id] = key.split('+');
+            const [source, id] = splitStorageKey(key);
             if (!source || !id) {
               console.warn(`跳过无效的收藏键: ${key}`);
               return;

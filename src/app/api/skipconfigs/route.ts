@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { getConfig } from '@/lib/config';
 import { db } from '@/lib/db';
+import { splitStorageKey } from '@/lib/storage-key';
 import { SkipConfig } from '@/lib/types';
 
 export const runtime = 'nodejs';
@@ -81,7 +82,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 解析key为source和id
-    const [source, id] = key.split('+');
+    const [source, id] = splitStorageKey(key);
     if (!source || !id) {
       return NextResponse.json({ error: '无效的key格式' }, { status: 400 });
     }
@@ -134,7 +135,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     // 解析key为source和id
-    const [source, id] = key.split('+');
+    const [source, id] = splitStorageKey(key);
     if (!source || !id) {
       return NextResponse.json({ error: '无效的key格式' }, { status: 400 });
     }

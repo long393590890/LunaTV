@@ -41,6 +41,24 @@ const info = new Map<string, VideoInfo>([
   ],
 ]);
 
+test('显式允许错误恢复时可以点击当前源重试', () => {
+  localStorage.setItem('enableOptimization', 'false');
+  const onSourceChange = jest.fn();
+  render(
+    <EpisodeSelector
+      totalEpisodes={1}
+      episodes_titles={['正片']}
+      availableSources={sources}
+      currentSource='0'
+      currentId='1'
+      allowCurrentSourceRetry
+      onSourceChange={onSourceChange}
+    />
+  );
+  fireEvent.click(screen.getByText('Alpha'));
+  expect(onSourceChange).toHaveBeenCalledWith('0', '1', '影片0');
+});
+
 test('搜索和切换排序只改变显示列表，当前源保持选择', () => {
   localStorage.setItem('enableOptimization', 'false');
   const onSourceChange = jest.fn();

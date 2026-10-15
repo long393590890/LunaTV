@@ -3,6 +3,7 @@
 import { AdminConfig } from './admin.types';
 import { KvrocksStorage } from './kvrocks.db';
 import { RedisStorage } from './redis.db';
+import { generateStorageKey } from './storage-key';
 import { Favorite, IStorage, PlayRecord, SkipConfig } from './types';
 import { UpstashRedisStorage } from './upstash.db';
 
@@ -40,10 +41,7 @@ function getStorage(): IStorage {
   return storageInstance;
 }
 
-// 工具函数：生成存储key
-export function generateStorageKey(source: string, id: string): string {
-  return `${source}+${id}`;
-}
+export { generateStorageKey } from './storage-key';
 
 // 导出便捷方法
 export class DbManager {
@@ -54,14 +52,17 @@ export class DbManager {
     this.storage = getStorage();
     // 启动时自动触发数据迁移（异步，不阻塞构造）
     if (this.storage && typeof this.storage.migrateData === 'function') {
-      this.migrationPromise = this.storage.migrateData().then(async () => {
-        // 数据结构迁移完成后，执行密码哈希迁移
-        if (typeof this.storage.migratePasswords === 'function') {
-          await this.storage.migratePasswords();
-        }
-      }).catch((err) => {
-        console.error('数据迁移异常:', err);
-      });
+      this.migrationPromise = this.storage
+        .migrateData()
+        .then(async () => {
+          // 数据结构迁移完成后，执行密码哈希迁移
+          if (typeof this.storage.migratePasswords === 'function') {
+            await this.storage.migratePasswords();
+          }
+        })
+        .catch((err) => {
+          console.error('数据迁移异常:', err);
+        });
     }
   }
 

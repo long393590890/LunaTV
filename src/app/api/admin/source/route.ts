@@ -3,13 +3,26 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
-import { getConfig } from '@/lib/config';
+import { getConfig, getSourceRuntimeStatus } from '@/lib/config';
+import {
+  validateSourceKey,
+  validateSourceProtocol,
+} from '@/lib/config-subscription';
 import { db } from '@/lib/db';
 
 export const runtime = 'nodejs';
 
 // 支持的操作类型
-type Action = 'add' | 'disable' | 'enable' | 'delete' | 'sort' | 'batch_disable' | 'batch_enable' | 'batch_delete';
+type Action =
+  | 'add'
+  | 'update'
+  | 'disable'
+  | 'enable'
+  | 'delete'
+  | 'sort'
+  | 'batch_disable'
+  | 'batch_enable'
+  | 'batch_delete';
 
 interface BaseBody {
   action?: Action;
@@ -37,7 +50,17 @@ export async function POST(request: NextRequest) {
     const username = authInfo.username;
 
     // 基础校验
-    const ACTIONS: Action[] = ['add', 'disable', 'enable', 'delete', 'sort', 'batch_disable', 'batch_enable', 'batch_delete'];
+    const ACTIONS: Action[] = [
+      'add',
+      'update',
+      'disable',
+      'enable',
+      'delete',
+      'sort',
+      'batch_disable',
+      'batch_enable',
+      'batch_delete',
+    ];
     if (!username || !action || !ACTIONS.includes(action)) {
       return NextResponse.json({ error: '参数格式错误' }, { status: 400 });
     }
@@ -56,27 +79,76 @@ export async function POST(request: NextRequest) {
     }
 
     switch (action) {
-      case 'add': {
-        const { key, name, api, detail } = body as {
-          key?: string;
-          name?: string;
-          api?: string;
-          detail?: string;
-        };
-        if (!key || !name || !api) {
-          return NextResponse.json({ error: '缺少必要参数' }, { status: 400 });
+      case 'add':
+      case 'update': {
+        const { key } = body;
+        try {
+          validateSourceKey(key);
+        } catch (error) {
+          return NextResponse.json(
+            { error: (error as Error).message },
+            { status: 400 }
+          );
         }
-        if (adminConfig.SourceConfig.some((s) => s.key === key)) {
+        const existing = adminConfig.SourceConfig.find((s) => s.key === key);
+        if (action === 'add' && existing) {
           return NextResponse.json({ error: '该源已存在' }, { status: 400 });
         }
-        adminConfig.SourceConfig.push({
-          key,
-          name,
-          api,
-          detail,
-          from: 'custom',
-          disabled: false,
+        if (action === 'update' && !existing) {
+          return NextResponse.json({ error: '源不存在' }, { status: 404 });
+        }
+        const fields: Record<string, unknown> = {};
+        for (const field of [
+          'name',
+          'api',
+          'detail',
+          'protocol',
+          'runnerSite',
+          'spider',
+          'ext',
+          'siteType',
+          'runtimeStatus',
+        ]) {
+          if (Object.prototype.hasOwnProperty.call(body, field))
+            fields[field] = body[field];
+        }
+        const source = { ...existing, ...fields, key };
+        if (
+          typeof source.name !== 'string' ||
+          !source.name.trim() ||
+          typeof source.api !== 'string' ||
+          !source.api.trim() ||
+          (source.detail !== undefined && typeof source.detail !== 'string')
+        ) {
+          return NextResponse.json(
+            { error: 'name、api 必须为非空字符串，detail 必须为字符串' },
+            { status: 400 }
+          );
+        }
+        try {
+          validateSourceProtocol(source);
+        } catch (error) {
+          return NextResponse.json(
+            { error: (error as Error).message },
+            { status: 400 }
+          );
+        }
+        source.runtimeStatus = getSourceRuntimeStatus({
+          ...source,
+          name: source.name,
+          api: source.api,
         });
+        if (existing) {
+          Object.assign(existing, source);
+        } else {
+          adminConfig.SourceConfig.push({
+            ...source,
+            name: source.name,
+            api: source.api,
+            from: 'custom',
+            disabled: false,
+          });
+        }
         break;
       }
       case 'disable': {
@@ -115,17 +187,17 @@ export async function POST(request: NextRequest) {
         // 检查并清理用户组和用户的权限数组
         // 清理用户组权限
         if (adminConfig.UserConfig.Tags) {
-          adminConfig.UserConfig.Tags.forEach(tag => {
+          adminConfig.UserConfig.Tags.forEach((tag) => {
             if (tag.enabledApis) {
-              tag.enabledApis = tag.enabledApis.filter(api => api !== key);
+              tag.enabledApis = tag.enabledApis.filter((api) => api !== key);
             }
           });
         }
 
         // 清理用户权限
-        adminConfig.UserConfig.Users.forEach(user => {
+        adminConfig.UserConfig.Users.forEach((user) => {
           if (user.enabledApis) {
-            user.enabledApis = user.enabledApis.filter(api => api !== key);
+            user.enabledApis = user.enabledApis.filter((api) => api !== key);
           }
         });
         break;
@@ -133,9 +205,12 @@ export async function POST(request: NextRequest) {
       case 'batch_disable': {
         const { keys } = body as { keys?: string[] };
         if (!Array.isArray(keys) || keys.length === 0) {
-          return NextResponse.json({ error: '缺少 keys 参数或为空' }, { status: 400 });
+          return NextResponse.json(
+            { error: '缺少 keys 参数或为空' },
+            { status: 400 }
+          );
         }
-        keys.forEach(key => {
+        keys.forEach((key) => {
           const entry = adminConfig.SourceConfig.find((s) => s.key === key);
           if (entry) {
             entry.disabled = true;
@@ -146,9 +221,12 @@ export async function POST(request: NextRequest) {
       case 'batch_enable': {
         const { keys } = body as { keys?: string[] };
         if (!Array.isArray(keys) || keys.length === 0) {
-          return NextResponse.json({ error: '缺少 keys 参数或为空' }, { status: 400 });
+          return NextResponse.json(
+            { error: '缺少 keys 参数或为空' },
+            { status: 400 }
+          );
         }
-        keys.forEach(key => {
+        keys.forEach((key) => {
           const entry = adminConfig.SourceConfig.find((s) => s.key === key);
           if (entry) {
             entry.disabled = false;
@@ -159,16 +237,19 @@ export async function POST(request: NextRequest) {
       case 'batch_delete': {
         const { keys } = body as { keys?: string[] };
         if (!Array.isArray(keys) || keys.length === 0) {
-          return NextResponse.json({ error: '缺少 keys 参数或为空' }, { status: 400 });
+          return NextResponse.json(
+            { error: '缺少 keys 参数或为空' },
+            { status: 400 }
+          );
         }
         // 过滤掉 from=config 的源，但不报错
-        const keysToDelete = keys.filter(key => {
+        const keysToDelete = keys.filter((key) => {
           const entry = adminConfig.SourceConfig.find((s) => s.key === key);
           return entry && entry.from !== 'config';
         });
 
         // 批量删除
-        keysToDelete.forEach(key => {
+        keysToDelete.forEach((key) => {
           const idx = adminConfig.SourceConfig.findIndex((s) => s.key === key);
           if (idx !== -1) {
             adminConfig.SourceConfig.splice(idx, 1);
@@ -179,17 +260,21 @@ export async function POST(request: NextRequest) {
         if (keysToDelete.length > 0) {
           // 清理用户组权限
           if (adminConfig.UserConfig.Tags) {
-            adminConfig.UserConfig.Tags.forEach(tag => {
+            adminConfig.UserConfig.Tags.forEach((tag) => {
               if (tag.enabledApis) {
-                tag.enabledApis = tag.enabledApis.filter(api => !keysToDelete.includes(api));
+                tag.enabledApis = tag.enabledApis.filter(
+                  (api) => !keysToDelete.includes(api)
+                );
               }
             });
           }
 
           // 清理用户权限
-          adminConfig.UserConfig.Users.forEach(user => {
+          adminConfig.UserConfig.Users.forEach((user) => {
             if (user.enabledApis) {
-              user.enabledApis = user.enabledApis.filter(api => !keysToDelete.includes(api));
+              user.enabledApis = user.enabledApis.filter(
+                (api) => !keysToDelete.includes(api)
+              );
             }
           });
         }
