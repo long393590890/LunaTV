@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-import { getAuthInfoFromCookie } from '@/lib/auth';
+import {
+  getAuthInfoFromCookie,
+  onlyFeaturedFromCookie,
+  selectedSourceFromCookie,
+} from '@/lib/auth';
 import { getAvailableApiSites } from '@/lib/config';
 import { getDetailFromApi } from '@/lib/downstream';
 import { validOpaqueId } from '@/lib/source-runner';
@@ -23,9 +27,13 @@ export async function GET(request: NextRequest) {
       { status: 400, headers }
     );
   try {
-    const site = (await getAvailableApiSites(authInfo.username)).find(
-      (entry) => entry.key === source
-    );
+    const site = (
+      await getAvailableApiSites(
+        authInfo.username,
+        onlyFeaturedFromCookie(request),
+        selectedSourceFromCookie(request)
+      )
+    ).find((entry) => entry.key === source);
     if (!site)
       return NextResponse.json(
         { error: '无效的API来源' },

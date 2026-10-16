@@ -34,6 +34,77 @@ function makeConfig(): AdminConfig {
   };
 }
 
+test('精选模式只筛选原列表且保持权限禁用规则，关闭不重复合并', async () => {
+  const config = makeConfig();
+  config.SourceConfig = [
+    {
+      key: 'selected',
+      name: '精选',
+      api: 'https://example.com/a',
+      from: 'custom',
+      featured: true,
+    },
+    {
+      key: 'normal',
+      name: '普通',
+      api: 'https://example.com/b',
+      from: 'custom',
+    },
+    {
+      key: 'disabled',
+      name: '禁用',
+      api: 'https://example.com/c',
+      from: 'custom',
+      featured: true,
+      disabled: true,
+    },
+  ];
+  config.UserConfig.Users = [
+    { username: 'restricted', role: 'user', enabledApis: ['normal'] },
+  ];
+  await setCachedConfig(config);
+  expect(
+    (await getAvailableApiSites(undefined, true)).map((site) => site.key)
+  ).toEqual(['selected']);
+  expect(
+    (await getAvailableApiSites(undefined, false)).map((site) => site.key)
+  ).toEqual(['selected', 'normal']);
+  expect(await getAvailableApiSites('restricted', true)).toEqual([]);
+  expect(
+    (await getAvailableApiSites(undefined, true, 'normal')).map(
+      (site) => site.key
+    )
+  ).toEqual(['normal']);
+  expect(await getAvailableApiSites('restricted', false, 'selected')).toEqual(
+    []
+  );
+  expect(await getAvailableApiSites(undefined, false, 'missing')).toEqual([]);
+  expect(await getAvailableApiSites(undefined, false, 'disabled')).toEqual([]);
+  config.SourceConfig[0].featured = false;
+  expect(await getAvailableApiSites(undefined, true)).toEqual([]);
+  config.SourceConfig[0].featured = true;
+  config.SourceConfig[0].disabled = true;
+  expect(await getAvailableApiSites(undefined, false, 'selected')).toEqual([]);
+});
+
+test('刷新配置保留管理员精选标记且新源默认不精选', () => {
+  const config = makeConfig();
+  config.SourceConfig[0].featured = true;
+  config.ConfigFile = JSON.stringify({
+    api_site: {
+      demo: { ...source, name: '新名称' },
+      other: { name: '新源', api: 'https://example.com/api' },
+    },
+  });
+  const result = refineConfig(config);
+  expect(result.SourceConfig.find((site) => site.key === 'demo')).toMatchObject(
+    { featured: true, name: '新名称' }
+  );
+  expect(
+    result.SourceConfig.find((site) => site.key === 'other')?.featured
+  ).toBeUndefined();
+});
+
 test('配置更新保留协议元数据和禁用状态，所有权限分支均返回协议字段', async () => {
   const oldRunner = process.env.SOURCE_RUNNER_URL;
   const oldToken = process.env.SOURCE_RUNNER_TOKEN;

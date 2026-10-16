@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-import { getAuthInfoFromCookie } from '@/lib/auth';
+import {
+  getAuthInfoFromCookie,
+  onlyFeaturedFromCookie,
+  selectedSourceFromCookie,
+} from '@/lib/auth';
 import { getAvailableApiSites } from '@/lib/config';
 import { getDetailFromApi } from '@/lib/downstream';
 import {
@@ -39,9 +43,13 @@ export async function POST(request: NextRequest) {
         { error: '播放参数无效' },
         { status: 400, headers }
       );
-    const site = (await getAvailableApiSites(auth.username)).find(
-      (entry) => entry.key === body.source
-    );
+    const site = (
+      await getAvailableApiSites(
+        auth.username,
+        onlyFeaturedFromCookie(request),
+        selectedSourceFromCookie(request)
+      )
+    ).find((entry) => entry.key === body.source);
     if (!site)
       return NextResponse.json(
         { error: '无效的API来源' },

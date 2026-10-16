@@ -3,7 +3,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { AdminConfig } from '@/lib/admin.types';
-import { getAuthInfoFromCookie } from '@/lib/auth';
+import {
+  getAuthInfoFromCookie,
+  onlyFeaturedFromCookie,
+  selectedSourceFromCookie,
+} from '@/lib/auth';
 import { getAvailableApiSites, getConfig } from '@/lib/config';
 import { searchFromApi } from '@/lib/downstream';
 import { yellowWords } from '@/lib/yellow';
@@ -27,19 +31,19 @@ export async function GET(request: NextRequest) {
     }
 
     // 生成建议
-    const suggestions = await generateSuggestions(config, query, authInfo.username);
-
-    // 从配置中获取缓存时间，如果没有配置则使用默认值300秒（5分钟）
-    const cacheTime = config.SiteConfig.SiteInterfaceCacheTime || 300;
+    const suggestions = await generateSuggestions(
+      config,
+      query,
+      authInfo.username,
+      onlyFeaturedFromCookie(request),
+      selectedSourceFromCookie(request)
+    );
 
     return NextResponse.json(
       { suggestions },
       {
         headers: {
-          'Cache-Control': `public, max-age=${cacheTime}, s-maxage=${cacheTime}`,
-          'CDN-Cache-Control': `public, s-maxage=${cacheTime}`,
-          'Vercel-CDN-Cache-Control': `public, s-maxage=${cacheTime}`,
-          'Netlify-Vary': 'query',
+          'Cache-Control': 'private, no-store',
         },
       }
     );
@@ -49,7 +53,13 @@ export async function GET(request: NextRequest) {
   }
 }
 
-async function generateSuggestions(config: AdminConfig, query: string, username: string): Promise<
+async function generateSuggestions(
+  config: AdminConfig,
+  query: string,
+  username: string,
+  onlyFeatured: boolean,
+  selectedSource?: string
+): Promise<
   Array<{
     text: string;
     type: 'exact' | 'related' | 'suggestion';
@@ -58,7 +68,11 @@ async function generateSuggestions(config: AdminConfig, query: string, username:
 > {
   const queryLower = query.toLowerCase();
 
-  const apiSites = await getAvailableApiSites(username);
+  const apiSites = await getAvailableApiSites(
+    username,
+    onlyFeatured,
+    selectedSource
+  );
   let realKeywords: string[] = [];
 
   if (apiSites.length > 0) {
@@ -69,7 +83,13 @@ async function generateSuggestions(config: AdminConfig, query: string, username:
     realKeywords = Array.from(
       new Set(
         results
-          .filter((r: any) => config.SiteConfig.DisableYellowFilter || !yellowWords.some((word: string) => (r.type_name || '').includes(word)))
+          .filter(
+            (r: any) =>
+              config.SiteConfig.DisableYellowFilter ||
+              !yellowWords.some((word: string) =>
+                (r.type_name || '').includes(word)
+              )
+          )
           .map((r: any) => r.title)
           .filter(Boolean)
           .flatMap((title: string) => title.split(/[ -:：·、-]/))

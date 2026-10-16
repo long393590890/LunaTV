@@ -9,7 +9,11 @@ jest.mock('next/server', () => ({
   },
 }));
 jest.mock('@/lib/downstream', () => ({ getDetailFromApi: jest.fn() }));
-jest.mock('@/lib/auth', () => ({ getAuthInfoFromCookie: jest.fn() }));
+jest.mock('@/lib/auth', () => ({
+  getAuthInfoFromCookie: jest.fn(),
+  onlyFeaturedFromCookie: jest.fn(() => false),
+  selectedSourceFromCookie: jest.fn(() => undefined),
+}));
 jest.mock('@/lib/config', () => ({ getAvailableApiSites: jest.fn() }));
 jest.mock('@/lib/source-media', () => ({
   assertPublicMediaUrl: jest.fn(),
@@ -57,7 +61,7 @@ it('拒绝用户无权访问的来源', async () => {
   expect(
     (await POST(request({ source: 'cat', videoId: 'v1', id: 'opaque' }))).status
   ).toBe(403);
-  expect(sites).toHaveBeenCalledWith('alice');
+  expect(sites).toHaveBeenCalledWith('alice', false, undefined);
   expect(runner).not.toHaveBeenCalled();
 });
 it('拒绝缺失视频ID以及详情中不存在的集数或线路', async () => {

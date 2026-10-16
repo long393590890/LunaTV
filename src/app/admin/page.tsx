@@ -298,6 +298,7 @@ interface SiteConfig {
 
 // 视频源数据类型
 interface DataSource {
+  featured?: boolean;
   protocol?: 'cms' | 'catjs' | 'csp';
   runnerSite?: string;
   runtimeStatus?: string;
@@ -2511,9 +2512,11 @@ const UserConfig = ({ config, role, refreshConfig }: UserConfigProps) => {
 const VideoSourceConfig = ({
   config,
   refreshConfig,
+  featuredOnly = false,
 }: {
   config: AdminConfig | null;
   refreshConfig: () => Promise<void>;
+  featuredOnly?: boolean;
 }) => {
   const { alertModal, showAlert, hideAlert } = useAlertModal();
   const { isLoading, withLoading } = useLoadingState();
@@ -2593,13 +2596,17 @@ const VideoSourceConfig = ({
   // 初始化
   useEffect(() => {
     if (config?.SourceConfig) {
-      setSources(config.SourceConfig);
+      setSources(
+        featuredOnly
+          ? config.SourceConfig.filter((source) => source.featured)
+          : config.SourceConfig
+      );
       // 进入时重置 orderChanged
       setOrderChanged(false);
       // 重置选择状态
       setSelectedSources(new Set());
     }
-  }, [config]);
+  }, [config, featuredOnly]);
 
   // 通用 API 请求
   const callSourceApi = async (body: Record<string, any>) => {
@@ -2670,6 +2677,7 @@ const VideoSourceConfig = ({
   };
 
   const handleDragEnd = (event: any) => {
+    if (featuredOnly) return;
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     const oldIndex = sources.findIndex((s) => s.key === active.id);
@@ -2894,7 +2902,7 @@ const VideoSourceConfig = ({
   // 可拖拽行封装 (dnd-kit)
   const DraggableRow = ({ source }: { source: DataSource }) => {
     const { attributes, listeners, setNodeRef, transform, transition } =
-      useSortable({ id: source.key });
+      useSortable({ id: source.key, disabled: featuredOnly });
 
     const style = {
       transform: CSS.Transform.toString(transform),
@@ -2918,6 +2926,7 @@ const VideoSourceConfig = ({
         <td className='px-2 py-4 text-center'>
           <input
             type='checkbox'
+            aria-label={`选择视频源 ${source.name}`}
             checked={selectedSources.has(source.key)}
             onChange={(e) => handleSelectSource(source.key, e.target.checked)}
             className='w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600'
@@ -2925,6 +2934,11 @@ const VideoSourceConfig = ({
         </td>
         <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100'>
           {source.name}
+          {source.featured && (
+            <span className='ml-2 text-xs text-amber-600 dark:text-amber-400'>
+              精选
+            </span>
+          )}
           <div className='text-xs text-gray-500'>
             {(source.protocol || 'cms').toUpperCase()}
             {source.runnerSite ? ` · ${source.runnerSite}` : ''}
@@ -2978,43 +2992,49 @@ const VideoSourceConfig = ({
           })()}
         </td>
         <td className='px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2'>
-          <button
-            className={buttonStyles.roundedSecondary}
-            onClick={() => {
-              setNewSource({ ...source });
-              setEditingSourceKey(source.key);
-              setShowAddForm(true);
-            }}
-          >
-            编辑
-          </button>
-          <button
-            onClick={() => handleToggleEnable(source.key)}
-            disabled={isLoading(`toggleSource_${source.key}`)}
-            className={`inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium ${
-              !source.disabled
-                ? buttonStyles.roundedDanger
-                : buttonStyles.roundedSuccess
-            } transition-colors ${
-              isLoading(`toggleSource_${source.key}`)
-                ? 'opacity-50 cursor-not-allowed'
-                : ''
-            }`}
-          >
-            {!source.disabled ? '禁用' : '启用'}
-          </button>
-          {source.from !== 'config' && (
-            <button
-              onClick={() => handleDelete(source.key)}
-              disabled={isLoading(`deleteSource_${source.key}`)}
-              className={`${buttonStyles.roundedSecondary} ${
-                isLoading(`deleteSource_${source.key}`)
-                  ? 'opacity-50 cursor-not-allowed'
-                  : ''
-              }`}
-            >
-              删除
-            </button>
+          {featuredOnly ? (
+            <span className='text-xs text-gray-500'>在视频源配置中编辑</span>
+          ) : (
+            <>
+              <button
+                className={buttonStyles.roundedSecondary}
+                onClick={() => {
+                  setNewSource({ ...source });
+                  setEditingSourceKey(source.key);
+                  setShowAddForm(true);
+                }}
+              >
+                编辑
+              </button>
+              <button
+                onClick={() => handleToggleEnable(source.key)}
+                disabled={isLoading(`toggleSource_${source.key}`)}
+                className={`inline-flex items-center px-3 py-1.5 rounded-full text-xs font-medium ${
+                  !source.disabled
+                    ? buttonStyles.roundedDanger
+                    : buttonStyles.roundedSuccess
+                } transition-colors ${
+                  isLoading(`toggleSource_${source.key}`)
+                    ? 'opacity-50 cursor-not-allowed'
+                    : ''
+                }`}
+              >
+                {!source.disabled ? '禁用' : '启用'}
+              </button>
+              {source.from !== 'config' && (
+                <button
+                  onClick={() => handleDelete(source.key)}
+                  disabled={isLoading(`deleteSource_${source.key}`)}
+                  className={`${buttonStyles.roundedSecondary} ${
+                    isLoading(`deleteSource_${source.key}`)
+                      ? 'opacity-50 cursor-not-allowed'
+                      : ''
+                  }`}
+                >
+                  删除
+                </button>
+              )}
+            </>
           )}
         </td>
       </tr>
@@ -3049,7 +3069,12 @@ const VideoSourceConfig = ({
 
   // 批量操作
   const handleBatchOperation = async (
-    action: 'batch_enable' | 'batch_disable' | 'batch_delete'
+    action:
+      | 'batch_enable'
+      | 'batch_disable'
+      | 'batch_delete'
+      | 'batch_feature'
+      | 'batch_unfeature'
   ) => {
     if (selectedSources.size === 0) {
       showAlert({
@@ -3060,11 +3085,31 @@ const VideoSourceConfig = ({
       return;
     }
 
-    const keys = Array.from(selectedSources);
+    const keys = Array.from(selectedSources).filter(
+      (key) =>
+        action !== 'batch_delete' ||
+        sources.some((source) => source.key === key && source.from !== 'config')
+    );
+    if (keys.length === 0) {
+      showAlert({
+        type: 'warning',
+        title: '没有可删除的视频源',
+        message: '配置文件中的视频源不可删除，可以使用禁用操作。',
+      });
+      return;
+    }
     let confirmMessage = '';
     let actionName = '';
 
     switch (action) {
+      case 'batch_feature':
+        confirmMessage = `确定将选中的 ${keys.length} 个视频源设为精选吗？`;
+        actionName = '设为精选';
+        break;
+      case 'batch_unfeature':
+        confirmMessage = `确定取消选中的 ${keys.length} 个视频源的精选标记吗？视频源仍会保留。`;
+        actionName = '取消精选';
+        break;
       case 'batch_enable':
         confirmMessage = `确定要启用选中的 ${keys.length} 个视频源吗？`;
         actionName = '批量启用';
@@ -3134,10 +3179,15 @@ const VideoSourceConfig = ({
 
   return (
     <div className='space-y-6'>
+      {featuredOnly && (
+        <p className='text-sm text-gray-500 dark:text-gray-400'>
+          精选源来自视频源配置。取消精选仅移除标记，不会删除或禁用视频源。
+        </p>
+      )}
       {/* 添加视频源表单 */}
       <div className='flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4'>
         <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
-          视频源列表
+          {featuredOnly ? `精选源列表（${sources.length}）` : '视频源列表'}
         </h4>
         <div className='flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-2'>
           {/* 批量操作按钮 - 移动端显示在下一行，PC端显示在左侧 */}
@@ -3150,86 +3200,108 @@ const VideoSourceConfig = ({
                     已选择 {selectedSources.size} 个视频源
                   </span>
                 </span>
+                {!featuredOnly && (
+                  <button
+                    onClick={() => handleBatchOperation('batch_feature')}
+                    disabled={isLoading('batchSource_batch_feature')}
+                    className={buttonStyles.success}
+                  >
+                    设为精选
+                  </button>
+                )}
                 <button
-                  onClick={() => handleBatchOperation('batch_enable')}
-                  disabled={isLoading('batchSource_batch_enable')}
-                  className={`px-3 py-1 text-sm ${
-                    isLoading('batchSource_batch_enable')
-                      ? buttonStyles.disabled
-                      : buttonStyles.success
-                  }`}
+                  onClick={() => handleBatchOperation('batch_unfeature')}
+                  disabled={isLoading('batchSource_batch_unfeature')}
+                  className={buttonStyles.warning}
                 >
-                  {isLoading('batchSource_batch_enable')
-                    ? '启用中...'
-                    : '批量启用'}
+                  取消精选
                 </button>
-                <button
-                  onClick={() => handleBatchOperation('batch_disable')}
-                  disabled={isLoading('batchSource_batch_disable')}
-                  className={`px-3 py-1 text-sm ${
-                    isLoading('batchSource_batch_disable')
-                      ? buttonStyles.disabled
-                      : buttonStyles.warning
-                  }`}
-                >
-                  {isLoading('batchSource_batch_disable')
-                    ? '禁用中...'
-                    : '批量禁用'}
-                </button>
-                <button
-                  onClick={() => handleBatchOperation('batch_delete')}
-                  disabled={isLoading('batchSource_batch_delete')}
-                  className={`px-3 py-1 text-sm ${
-                    isLoading('batchSource_batch_delete')
-                      ? buttonStyles.disabled
-                      : buttonStyles.danger
-                  }`}
-                >
-                  {isLoading('batchSource_batch_delete')
-                    ? '删除中...'
-                    : '批量删除'}
-                </button>
+                {!featuredOnly && (
+                  <>
+                    <button
+                      onClick={() => handleBatchOperation('batch_enable')}
+                      disabled={isLoading('batchSource_batch_enable')}
+                      className={`px-3 py-1 text-sm ${
+                        isLoading('batchSource_batch_enable')
+                          ? buttonStyles.disabled
+                          : buttonStyles.success
+                      }`}
+                    >
+                      {isLoading('batchSource_batch_enable')
+                        ? '启用中...'
+                        : '批量启用'}
+                    </button>
+                    <button
+                      onClick={() => handleBatchOperation('batch_disable')}
+                      disabled={isLoading('batchSource_batch_disable')}
+                      className={`px-3 py-1 text-sm ${
+                        isLoading('batchSource_batch_disable')
+                          ? buttonStyles.disabled
+                          : buttonStyles.warning
+                      }`}
+                    >
+                      {isLoading('batchSource_batch_disable')
+                        ? '禁用中...'
+                        : '批量禁用'}
+                    </button>
+                    <button
+                      onClick={() => handleBatchOperation('batch_delete')}
+                      disabled={isLoading('batchSource_batch_delete')}
+                      className={`px-3 py-1 text-sm ${
+                        isLoading('batchSource_batch_delete')
+                          ? buttonStyles.disabled
+                          : buttonStyles.danger
+                      }`}
+                    >
+                      {isLoading('batchSource_batch_delete')
+                        ? '删除中...'
+                        : '批量删除'}
+                    </button>
+                  </>
+                )}
               </div>
               <div className='hidden sm:block w-px h-6 bg-gray-300 dark:bg-gray-600 order-2'></div>
             </>
           )}
-          <div className='flex items-center gap-2 order-1 sm:order-2'>
-            <button
-              onClick={() => setShowValidationModal(true)}
-              disabled={isValidating}
-              className={`px-3 py-1 text-sm rounded-lg transition-colors flex items-center space-x-1 ${
-                isValidating ? buttonStyles.disabled : buttonStyles.primary
-              }`}
-            >
-              {isValidating ? (
-                <>
-                  <div className='w-3 h-3 border border-white border-t-transparent rounded-full animate-spin'></div>
-                  <span>检测中...</span>
-                </>
-              ) : (
-                '有效性检测'
-              )}
-            </button>
-            <button
-              onClick={() => {
-                setEditingSourceKey(null);
-                setNewSource({
-                  name: '',
-                  key: '',
-                  api: '',
-                  detail: '',
-                  from: 'custom',
-                  protocol: 'cms',
-                });
-                setShowAddForm(!showAddForm);
-              }}
-              className={
-                showAddForm ? buttonStyles.secondary : buttonStyles.success
-              }
-            >
-              {showAddForm ? '取消' : '添加视频源'}
-            </button>
-          </div>
+          {!featuredOnly && (
+            <div className='flex items-center gap-2 order-1 sm:order-2'>
+              <button
+                onClick={() => setShowValidationModal(true)}
+                disabled={isValidating}
+                className={`px-3 py-1 text-sm rounded-lg transition-colors flex items-center space-x-1 ${
+                  isValidating ? buttonStyles.disabled : buttonStyles.primary
+                }`}
+              >
+                {isValidating ? (
+                  <>
+                    <div className='w-3 h-3 border border-white border-t-transparent rounded-full animate-spin'></div>
+                    <span>检测中...</span>
+                  </>
+                ) : (
+                  '有效性检测'
+                )}
+              </button>
+              <button
+                onClick={() => {
+                  setEditingSourceKey(null);
+                  setNewSource({
+                    name: '',
+                    key: '',
+                    api: '',
+                    detail: '',
+                    from: 'custom',
+                    protocol: 'cms',
+                  });
+                  setShowAddForm(!showAddForm);
+                }}
+                className={
+                  showAddForm ? buttonStyles.secondary : buttonStyles.success
+                }
+              >
+                {showAddForm ? '取消' : '添加视频源'}
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -3347,7 +3419,13 @@ const VideoSourceConfig = ({
               <th className='w-12 px-2 py-3 text-center'>
                 <input
                   type='checkbox'
+                  aria-label={featuredOnly ? '全选精选源' : '全选视频源'}
                   checked={selectAll}
+                  ref={(input) => {
+                    if (input)
+                      input.indeterminate =
+                        selectedSources.size > 0 && !selectAll;
+                  }}
                   onChange={(e) => handleSelectAll(e.target.checked)}
                   className='w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600'
                 />
@@ -3387,6 +3465,18 @@ const VideoSourceConfig = ({
               strategy={verticalListSortingStrategy}
             >
               <tbody className='divide-y divide-gray-200 dark:divide-gray-700'>
+                {sources.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={9}
+                      className='px-6 py-8 text-center text-sm text-gray-500'
+                    >
+                      {featuredOnly
+                        ? '暂无精选源，请在视频源配置中勾选后设为精选。'
+                        : '暂无视频源'}
+                    </td>
+                  </tr>
+                )}
                 {sources.map((source) => (
                   <DraggableRow key={source.key} source={source} />
                 ))}
@@ -5419,6 +5509,7 @@ function AdminPageClient() {
   const [expandedTabs, setExpandedTabs] = useState<{ [key: string]: boolean }>({
     userConfig: false,
     videoSource: false,
+    featuredSource: false,
     liveSource: false,
     siteConfig: false,
     categoryConfig: false,
@@ -5598,6 +5689,24 @@ function AdminPageClient() {
               onToggle={() => toggleTab('videoSource')}
             >
               <VideoSourceConfig config={config} refreshConfig={fetchConfig} />
+            </CollapsibleTab>
+
+            <CollapsibleTab
+              title='精选源配置'
+              icon={
+                <Video
+                  size={20}
+                  className='text-amber-600 dark:text-amber-400'
+                />
+              }
+              isExpanded={expandedTabs.featuredSource}
+              onToggle={() => toggleTab('featuredSource')}
+            >
+              <VideoSourceConfig
+                config={config}
+                refreshConfig={fetchConfig}
+                featuredOnly
+              />
             </CollapsibleTab>
 
             {/* 直播源配置标签 */}

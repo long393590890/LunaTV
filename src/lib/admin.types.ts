@@ -44,6 +44,7 @@ export interface AdminConfig {
     runtimeStatus?: string;
     from: 'config' | 'custom';
     disabled?: boolean;
+    featured?: boolean;
   }[];
   CustomCategories: {
     name?: string;

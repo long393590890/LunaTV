@@ -507,9 +507,19 @@ export async function getCacheTime(): Promise<number> {
   return config.SiteConfig.SiteInterfaceCacheTime || 7200;
 }
 
-export async function getAvailableApiSites(user?: string): Promise<ApiSite[]> {
+export async function getAvailableApiSites(
+  user?: string,
+  onlyFeatured = false,
+  selectedSource?: string
+): Promise<ApiSite[]> {
   const config = await getConfig();
-  const allApiSites = config.SourceConfig.filter((s) => !s.disabled)
+  const allApiSites = config.SourceConfig.filter(
+    (s) =>
+      !s.disabled &&
+      (selectedSource
+        ? s.key === selectedSource
+        : !onlyFeatured || s.featured === true)
+  )
     .map((s) => ({ key: s.key, ...sourceFields(s) }))
     .filter(
       (s) =>

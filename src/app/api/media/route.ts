@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Readable } from 'stream';
 
-import { getAuthInfoFromCookie } from '@/lib/auth';
+import {
+  getAuthInfoFromCookie,
+  onlyFeaturedFromCookie,
+  selectedSourceFromCookie,
+} from '@/lib/auth';
 import { getAvailableApiSites } from '@/lib/config';
 import {
   readMediaToken,
@@ -24,9 +28,13 @@ export async function GET(request: NextRequest) {
     );
     if (
       grant.user !== auth.username ||
-      !(await getAvailableApiSites(auth.username)).some(
-        (site) => site.key === grant.source
-      )
+      !(
+        await getAvailableApiSites(
+          auth.username,
+          onlyFeaturedFromCookie(request),
+          selectedSourceFromCookie(request)
+        )
+      ).some((site) => site.key === grant.source)
     )
       return NextResponse.json(
         { error: 'Forbidden' },

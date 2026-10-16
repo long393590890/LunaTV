@@ -2,7 +2,11 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 
-import { getAuthInfoFromCookie } from '@/lib/auth';
+import {
+  getAuthInfoFromCookie,
+  onlyFeaturedFromCookie,
+  selectedSourceFromCookie,
+} from '@/lib/auth';
 import { getAvailableApiSites } from '@/lib/config';
 
 export const runtime = 'nodejs';
@@ -18,7 +22,14 @@ export async function GET(request: NextRequest) {
     );
   }
   try {
-    const apiSites = await getAvailableApiSites(authInfo.username);
+    // 选择器需要完整的有权限视频源，忽略当前个人筛选。
+    const selectMode =
+      request.nextUrl.searchParams.get('scope') === 'selection';
+    const apiSites = await getAvailableApiSites(
+      authInfo.username,
+      selectMode ? false : onlyFeaturedFromCookie(request),
+      selectMode ? undefined : selectedSourceFromCookie(request)
+    );
 
     return NextResponse.json(
       apiSites.map((site) => ({

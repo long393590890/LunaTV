@@ -37,6 +37,81 @@ export const UserMenu: React.FC = () => {
   const [authInfo, setAuthInfo] = useState<AuthInfo | null>(null);
   const [storageType, setStorageType] = useState<string>('localstorage');
   const [mounted, setMounted] = useState(false);
+  const [onlyFeaturedSources, setOnlyFeaturedSources] = useState(false);
+  const [selectedVideoSource, setSelectedVideoSource] = useState<
+    string | undefined
+  >();
+  const [sourceOptions, setSourceOptions] = useState<
+    Array<{ key: string; name: string }>
+  >([]);
+  const [sourceQuery, setSourceQuery] = useState('');
+  const [sourcePickerOpen, setSourcePickerOpen] = useState(false);
+
+  useEffect(() => {
+    setOnlyFeaturedSources(
+      document.cookie
+        .split(';')
+        .some((cookie) => cookie.trim() === 'onlyFeaturedSources=1')
+    );
+  }, []);
+
+  useEffect(() => {
+    const cookie = document.cookie
+      .split(';')
+      .map((value) => value.trim())
+      .find((value) => value.startsWith('selectedVideoSource='));
+    try {
+      setSelectedVideoSource(
+        cookie
+          ? decodeURIComponent(cookie.slice('selectedVideoSource='.length))
+          : undefined
+      );
+    } catch {
+      /* 忽略损坏的偏好 */
+    }
+  }, []);
+
+  const [sourcePickerError, setSourcePickerError] = useState('');
+  const [sourcePickerLoading, setSourcePickerLoading] = useState(false);
+  const openSourcePicker = async () => {
+    setSourcePickerOpen(true);
+    setSourceQuery('');
+    setSourcePickerError('');
+    setSourcePickerLoading(true);
+    try {
+      const response = await fetch('/api/search/resources?scope=selection', {
+        cache: 'no-store',
+      });
+      if (!response.ok) throw new Error('获取视频源失败，请重试');
+      setSourceOptions(await response.json());
+    } catch (error) {
+      setSourcePickerError(
+        error instanceof Error ? error.message : '获取视频源失败'
+      );
+    } finally {
+      setSourcePickerLoading(false);
+    }
+  };
+  const chooseSource = (key?: string) => {
+    document.cookie = `selectedVideoSource=${
+      key ? encodeURIComponent(key) : ''
+    }; Path=/; Max-Age=${key ? 31536000 : 0}; SameSite=Lax${
+      window.location.protocol === 'https:' ? '; Secure' : ''
+    }`;
+    window.location.reload();
+  };
+
+  const toggleFeaturedSources = () => {
+    const enabled = !onlyFeaturedSources;
+    document.cookie = `onlyFeaturedSources=${
+      enabled ? '1' : '0'
+    }; Path=/; Max-Age=31536000; SameSite=Lax${
+      window.location.protocol === 'https:' ? '; Secure' : ''
+    }`;
+    setOnlyFeaturedSources(enabled);
+    // 清空旧页面结果和客户端请求状态，后续请求统一读取新偏好。
+    window.location.reload();
+  };
 
   // Body 滚动锁定 - 使用 overflow 方式避免布局问题
   useEffect(() => {
@@ -53,7 +128,6 @@ export const UserMenu: React.FC = () => {
       html.style.overflow = 'hidden';
 
       return () => {
-
         // 恢复所有原始样式
         body.style.overflow = originalBodyOverflow;
         html.style.overflow = originalHtmlOverflow;
@@ -67,8 +141,12 @@ export const UserMenu: React.FC = () => {
   const [enableOptimization, setEnableOptimization] = useState(true);
   const [fluidSearch, setFluidSearch] = useState(true);
   const [liveDirectConnect, setLiveDirectConnect] = useState(false);
-  const [doubanDataSource, setDoubanDataSource] = useState('cmliussss-cdn-tencent');
-  const [doubanImageProxyType, setDoubanImageProxyType] = useState('cmliussss-cdn-tencent');
+  const [doubanDataSource, setDoubanDataSource] = useState(
+    'cmliussss-cdn-tencent'
+  );
+  const [doubanImageProxyType, setDoubanImageProxyType] = useState(
+    'cmliussss-cdn-tencent'
+  );
   const [doubanImageProxyUrl, setDoubanImageProxyUrl] = useState('');
   const [isDoubanDropdownOpen, setIsDoubanDropdownOpen] = useState(false);
   const [isDoubanImageProxyDropdownOpen, setIsDoubanImageProxyDropdownOpen] =
@@ -136,7 +214,8 @@ export const UserMenu: React.FC = () => {
 
       const savedDoubanDataSource = localStorage.getItem('doubanDataSource');
       const defaultDoubanProxyType =
-        (window as any).RUNTIME_CONFIG?.DOUBAN_PROXY_TYPE || 'cmliussss-cdn-tencent';
+        (window as any).RUNTIME_CONFIG?.DOUBAN_PROXY_TYPE ||
+        'cmliussss-cdn-tencent';
       if (savedDoubanDataSource !== null) {
         setDoubanDataSource(savedDoubanDataSource);
       } else if (defaultDoubanProxyType) {
@@ -156,14 +235,19 @@ export const UserMenu: React.FC = () => {
         'doubanImageProxyType'
       );
       const defaultDoubanImageProxyType =
-        (window as any).RUNTIME_CONFIG?.DOUBAN_IMAGE_PROXY_TYPE || 'cmliussss-cdn-tencent';
+        (window as any).RUNTIME_CONFIG?.DOUBAN_IMAGE_PROXY_TYPE ||
+        'cmliussss-cdn-tencent';
       // 兼容历史数据：直连和豆瓣官方精品 CDN 统一使用服务器代理
       const normalizeImageProxyType = (type: string) =>
         type === 'direct' || type === 'img3' ? 'server' : type;
       if (savedDoubanImageProxyType !== null) {
-        setDoubanImageProxyType(normalizeImageProxyType(savedDoubanImageProxyType));
+        setDoubanImageProxyType(
+          normalizeImageProxyType(savedDoubanImageProxyType)
+        );
       } else if (defaultDoubanImageProxyType) {
-        setDoubanImageProxyType(normalizeImageProxyType(defaultDoubanImageProxyType));
+        setDoubanImageProxyType(
+          normalizeImageProxyType(defaultDoubanImageProxyType)
+        );
       }
 
       const savedDoubanImageProxyUrl = localStorage.getItem(
@@ -422,12 +506,17 @@ export const UserMenu: React.FC = () => {
 
   const handleResetSettings = () => {
     const defaultDoubanProxyType =
-      (window as any).RUNTIME_CONFIG?.DOUBAN_PROXY_TYPE || 'cmliussss-cdn-tencent';
+      (window as any).RUNTIME_CONFIG?.DOUBAN_PROXY_TYPE ||
+      'cmliussss-cdn-tencent';
     const defaultDoubanProxy =
       (window as any).RUNTIME_CONFIG?.DOUBAN_PROXY || '';
     let defaultDoubanImageProxyType =
-      (window as any).RUNTIME_CONFIG?.DOUBAN_IMAGE_PROXY_TYPE || 'cmliussss-cdn-tencent';
-    if (defaultDoubanImageProxyType === 'direct' || defaultDoubanImageProxyType === 'img3') {
+      (window as any).RUNTIME_CONFIG?.DOUBAN_IMAGE_PROXY_TYPE ||
+      'cmliussss-cdn-tencent';
+    if (
+      defaultDoubanImageProxyType === 'direct' ||
+      defaultDoubanImageProxyType === 'img3'
+    ) {
       defaultDoubanImageProxyType = 'server';
     }
     const defaultDoubanImageProxyUrl =
@@ -488,7 +577,7 @@ export const UserMenu: React.FC = () => {
       />
 
       {/* 菜单面板 */}
-      <div className='fixed top-14 right-4 w-56 bg-white dark:bg-gray-900 rounded-lg shadow-xl z-[1001] border border-gray-200/50 dark:border-gray-700/50 overflow-hidden select-none'>
+      <div className='fixed top-14 right-4 w-72 max-w-[calc(100vw-2rem)] max-h-[calc(100dvh-4.5rem)] overflow-y-auto bg-white dark:bg-gray-900 rounded-lg shadow-xl z-[1001] border border-gray-200/50 dark:border-gray-700/50 select-none'>
         {/* 用户信息区域 */}
         <div className='px-3 py-2.5 border-b border-gray-200 dark:border-gray-700 bg-gradient-to-r from-gray-50 to-gray-100/50 dark:from-gray-800 dark:to-gray-800/50'>
           <div className='space-y-1'>
@@ -497,12 +586,13 @@ export const UserMenu: React.FC = () => {
                 当前用户
               </span>
               <span
-                className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${(authInfo?.role || 'user') === 'owner'
-                  ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'
-                  : (authInfo?.role || 'user') === 'admin'
+                className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${
+                  (authInfo?.role || 'user') === 'owner'
+                    ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'
+                    : (authInfo?.role || 'user') === 'admin'
                     ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300'
                     : 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300'
-                  }`}
+                }`}
               >
                 {getRoleText(authInfo?.role || 'user')}
               </span>
@@ -529,6 +619,107 @@ export const UserMenu: React.FC = () => {
             <Settings className='w-4 h-4 text-gray-500 dark:text-gray-400' />
             <span className='font-medium'>设置</span>
           </button>
+
+          <div className='flex items-center justify-between gap-3 px-4 py-3 text-sm text-gray-700 dark:text-gray-200'>
+            <span className='font-medium'>仅使用精选</span>
+            <button
+              type='button'
+              role='switch'
+              aria-label='仅使用精选'
+              aria-checked={onlyFeaturedSources}
+              onClick={toggleFeaturedSources}
+              className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-600 ${
+                onlyFeaturedSources
+                  ? 'bg-green-600'
+                  : 'bg-gray-300 dark:bg-gray-600'
+              }`}
+            >
+              <span
+                className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                  onlyFeaturedSources ? 'translate-x-4' : 'translate-x-0.5'
+                }`}
+              />
+            </button>
+          </div>
+
+          <button
+            type='button'
+            onClick={openSourcePicker}
+            className='w-full px-4 py-3 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'
+          >
+            指定视频源{selectedVideoSource ? '（已开启）' : ''}
+          </button>
+          {sourcePickerOpen && (
+            <div className='mx-3 mb-3 space-y-2 rounded-lg border border-gray-200 p-3 dark:border-gray-600'>
+              <p className='text-xs text-gray-500 dark:text-gray-400'>
+                指定后仅使用该源，优先于精选开关。
+              </p>
+              <input
+                aria-label='搜索视频源'
+                placeholder='搜索名称或 Key'
+                value={sourceQuery}
+                onChange={(event) => setSourceQuery(event.target.value)}
+                className='w-full rounded border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
+              />
+              <button
+                type='button'
+                onClick={() => chooseSource()}
+                className='text-sm text-green-600 dark:text-green-400'
+              >
+                取消指定，恢复源列表
+              </button>
+              {sourcePickerLoading && (
+                <p className='text-xs text-gray-500'>加载中...</p>
+              )}
+              {sourcePickerError && (
+                <p role='alert' className='text-xs text-red-600'>
+                  {sourcePickerError}
+                </p>
+              )}
+              <div className='max-h-52 overflow-y-auto'>
+                {sourceOptions
+                  .filter((source) =>
+                    `${source.name} ${source.key}`
+                      .toLowerCase()
+                      .includes(sourceQuery.trim().toLowerCase())
+                  )
+                  .map((source) => (
+                    <button
+                      type='button'
+                      key={source.key}
+                      aria-pressed={source.key === selectedVideoSource}
+                      onClick={() => chooseSource(source.key)}
+                      className={`block w-full rounded px-2 py-2 text-left text-sm ${
+                        source.key === selectedVideoSource
+                          ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
+                          : 'text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700'
+                      }`}
+                    >
+                      {source.name}
+                      <span className='block text-xs opacity-60'>
+                        {source.key}
+                      </span>
+                    </button>
+                  ))}
+                {!sourcePickerLoading &&
+                  !sourcePickerError &&
+                  !sourceOptions.some((source) =>
+                    `${source.name} ${source.key}`
+                      .toLowerCase()
+                      .includes(sourceQuery.trim().toLowerCase())
+                  ) && (
+                    <p className='text-xs text-gray-500'>没有匹配的视频源</p>
+                  )}
+              </div>
+              <button
+                type='button'
+                onClick={() => setSourcePickerOpen(false)}
+                className='text-xs text-gray-500'
+              >
+                收起
+              </button>
+            </div>
+          )}
 
           {/* 管理面板按钮 */}
           {showAdminPanel && (
@@ -581,12 +772,13 @@ export const UserMenu: React.FC = () => {
                 updateStatus &&
                 updateStatus !== UpdateStatus.FETCH_FAILED && (
                   <div
-                    className={`w-2 h-2 rounded-full -translate-y-2 ${updateStatus === UpdateStatus.HAS_UPDATE
-                      ? 'bg-yellow-500'
-                      : updateStatus === UpdateStatus.NO_UPDATE
+                    className={`w-2 h-2 rounded-full -translate-y-2 ${
+                      updateStatus === UpdateStatus.HAS_UPDATE
+                        ? 'bg-yellow-500'
+                        : updateStatus === UpdateStatus.NO_UPDATE
                         ? 'bg-green-400'
                         : ''
-                      }`}
+                    }`}
                   ></div>
                 )}
             </div>
@@ -617,9 +809,7 @@ export const UserMenu: React.FC = () => {
       />
 
       {/* 设置面板 */}
-      <div
-        className='fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-xl max-h-[90vh] bg-white dark:bg-gray-900 rounded-xl shadow-xl z-[1001] flex flex-col'
-      >
+      <div className='fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-xl max-h-[90vh] bg-white dark:bg-gray-900 rounded-xl shadow-xl z-[1001] flex flex-col'>
         {/* 内容容器 - 独立的滚动区域 */}
         <div
           className='flex-1 p-6 overflow-y-auto'
@@ -681,8 +871,9 @@ export const UserMenu: React.FC = () => {
                 {/* 下拉箭头 */}
                 <div className='absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none'>
                   <ChevronDown
-                    className={`w-4 h-4 text-gray-400 dark:text-gray-500 transition-transform duration-200 ${isDoubanDropdownOpen ? 'rotate-180' : ''
-                      }`}
+                    className={`w-4 h-4 text-gray-400 dark:text-gray-500 transition-transform duration-200 ${
+                      isDoubanDropdownOpen ? 'rotate-180' : ''
+                    }`}
                   />
                 </div>
 
@@ -697,10 +888,11 @@ export const UserMenu: React.FC = () => {
                           handleDoubanDataSourceChange(option.value);
                           setIsDoubanDropdownOpen(false);
                         }}
-                        className={`w-full px-3 py-2.5 text-left text-sm transition-colors duration-150 flex items-center justify-between hover:bg-gray-100 dark:hover:bg-gray-700 ${doubanDataSource === option.value
-                          ? 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400'
-                          : 'text-gray-900 dark:text-gray-100'
-                          }`}
+                        className={`w-full px-3 py-2.5 text-left text-sm transition-colors duration-150 flex items-center justify-between hover:bg-gray-100 dark:hover:bg-gray-700 ${
+                          doubanDataSource === option.value
+                            ? 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400'
+                            : 'text-gray-900 dark:text-gray-100'
+                        }`}
                       >
                         <span className='truncate'>{option.label}</span>
                         {doubanDataSource === option.value && (
@@ -718,7 +910,10 @@ export const UserMenu: React.FC = () => {
                   <button
                     type='button'
                     onClick={() =>
-                      window.open(getThanksInfo(doubanDataSource)!.url, '_blank')
+                      window.open(
+                        getThanksInfo(doubanDataSource)!.url,
+                        '_blank'
+                      )
                     }
                     className='flex items-center justify-center gap-1.5 w-full px-3 text-xs text-gray-500 dark:text-gray-400 cursor-pointer'
                   >
@@ -786,8 +981,9 @@ export const UserMenu: React.FC = () => {
                 {/* 下拉箭头 */}
                 <div className='absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none'>
                   <ChevronDown
-                    className={`w-4 h-4 text-gray-400 dark:text-gray-500 transition-transform duration-200 ${isDoubanDropdownOpen ? 'rotate-180' : ''
-                      }`}
+                    className={`w-4 h-4 text-gray-400 dark:text-gray-500 transition-transform duration-200 ${
+                      isDoubanDropdownOpen ? 'rotate-180' : ''
+                    }`}
                   />
                 </div>
 
@@ -802,10 +998,11 @@ export const UserMenu: React.FC = () => {
                           handleDoubanImageProxyTypeChange(option.value);
                           setIsDoubanImageProxyDropdownOpen(false);
                         }}
-                        className={`w-full px-3 py-2.5 text-left text-sm transition-colors duration-150 flex items-center justify-between hover:bg-gray-100 dark:hover:bg-gray-700 ${doubanImageProxyType === option.value
-                          ? 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400'
-                          : 'text-gray-900 dark:text-gray-100'
-                          }`}
+                        className={`w-full px-3 py-2.5 text-left text-sm transition-colors duration-150 flex items-center justify-between hover:bg-gray-100 dark:hover:bg-gray-700 ${
+                          doubanImageProxyType === option.value
+                            ? 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400'
+                            : 'text-gray-900 dark:text-gray-100'
+                        }`}
                       >
                         <span className='truncate'>{option.label}</span>
                         {doubanImageProxyType === option.value && (
@@ -953,7 +1150,9 @@ export const UserMenu: React.FC = () => {
                     type='checkbox'
                     className='sr-only peer'
                     checked={liveDirectConnect}
-                    onChange={(e) => handleLiveDirectConnectToggle(e.target.checked)}
+                    onChange={(e) =>
+                      handleLiveDirectConnectToggle(e.target.checked)
+                    }
                   />
                   <div className='w-11 h-6 bg-gray-300 rounded-full peer-checked:bg-green-500 transition-colors dark:bg-gray-600'></div>
                   <div className='absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform peer-checked:translate-x-5'></div>
@@ -994,9 +1193,7 @@ export const UserMenu: React.FC = () => {
       />
 
       {/* 修改密码面板 */}
-      <div
-        className='fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white dark:bg-gray-900 rounded-xl shadow-xl z-[1001] overflow-hidden'
-      >
+      <div className='fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white dark:bg-gray-900 rounded-xl shadow-xl z-[1001] overflow-hidden'>
         {/* 内容容器 - 独立的滚动区域 */}
         <div
           className='h-full p-6'
@@ -1081,7 +1278,12 @@ export const UserMenu: React.FC = () => {
             <button
               onClick={handleSubmitChangePassword}
               className='flex-1 px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-600 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
-              disabled={passwordLoading || !oldPassword || !newPassword || !confirmPassword}
+              disabled={
+                passwordLoading ||
+                !oldPassword ||
+                !newPassword ||
+                !confirmPassword
+              }
             >
               {passwordLoading ? '修改中...' : '确认修改'}
             </button>

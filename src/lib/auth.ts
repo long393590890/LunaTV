@@ -22,6 +22,23 @@ export function getAuthInfoFromCookie(request: NextRequest): {
   }
 }
 
+// 个人源偏好仅缩小可用集合，不替代权限校验。
+export function onlyFeaturedFromCookie(request: NextRequest): boolean {
+  return request.cookies.get('onlyFeaturedSources')?.value === '1';
+}
+
+export function selectedSourceFromCookie(
+  request: NextRequest
+): string | undefined {
+  const value = request.cookies.get('selectedVideoSource')?.value;
+  if (!value) return undefined;
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return undefined;
+  }
+}
+
 // 从cookie获取认证信息 (客户端使用)
 export function getAuthInfoFromBrowserCookie(): {
   password?: string;

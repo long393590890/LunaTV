@@ -22,7 +22,9 @@ type Action =
   | 'sort'
   | 'batch_disable'
   | 'batch_enable'
-  | 'batch_delete';
+  | 'batch_delete'
+  | 'batch_feature'
+  | 'batch_unfeature';
 
 interface BaseBody {
   action?: Action;
@@ -60,6 +62,8 @@ export async function POST(request: NextRequest) {
       'batch_disable',
       'batch_enable',
       'batch_delete',
+      'batch_feature',
+      'batch_unfeature',
     ];
     if (!username || !action || !ACTIONS.includes(action)) {
       return NextResponse.json({ error: '参数格式错误' }, { status: 400 });
@@ -199,6 +203,37 @@ export async function POST(request: NextRequest) {
           if (user.enabledApis) {
             user.enabledApis = user.enabledApis.filter((api) => api !== key);
           }
+        });
+        break;
+      }
+      case 'batch_feature':
+      case 'batch_unfeature': {
+        const { keys } = body;
+        if (
+          !Array.isArray(keys) ||
+          keys.length === 0 ||
+          keys.some((key: unknown) => typeof key !== 'string')
+        ) {
+          return NextResponse.json(
+            { error: 'keys 必须为非空字符串数组' },
+            { status: 400 }
+          );
+        }
+        const selected = new Set(keys);
+        if (
+          Array.from(selected).some(
+            (key) =>
+              !adminConfig.SourceConfig.some((source) => source.key === key)
+          )
+        ) {
+          return NextResponse.json(
+            { error: '所选视频源不存在，请刷新后重试' },
+            { status: 404 }
+          );
+        }
+        adminConfig.SourceConfig.forEach((source) => {
+          if (selected.has(source.key))
+            source.featured = action === 'batch_feature';
         });
         break;
       }
