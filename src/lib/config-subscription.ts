@@ -178,3 +178,114 @@ export async function parseConfigSubscription(
   }
   return JSON.stringify(normalizeConfigObject(config, baseUrl));
 }
+
+// ---------- 批量订阅：多仓识别与多配置合并 ----------
+
+export interface StoreHouseEntry {
+  name?: string;
+  url?: unknown;
+}
+
+export function extractStoreHouseUrls(config: unknown): string[] | null {
+  if (!isObject(config)) return null;
+  const sites = (config as Record<string, unknown>).sites;
+  const apiSite = (config as Record<string, unknown>).api_site;
+  if (sites !== undefined || apiSite !== undefined) return null;
+  const urls = (config as Record<string, unknown>).urls;
+  if (!Array.isArray(urls) || urls.length === 0) return null;
+  const out: string[] = [];
+  for (const entry of urls) {
+    let value: unknown;
+    if (typeof entry === 'string') value = entry;
+    else if (isObject(entry)) value = entry.url;
+    if (typeof value !== 'string' || !value.trim()) continue;
+    try {
+      const url = new URL(value.trim());
+      if (url.protocol === 'http:' || url.protocol === 'https:') {
+        out.push(url.href);
+      }
+    } catch {
+      // 忽略非法地址
+    }
+  }
+  return out.length > 0 ? out : null;
+}
+
+function siteSignature(site: Record<string, unknown>): string {
+  return JSON.stringify([site.api, site.name, site.protocol, site.ext]);
+}
+
+export interface MergedConfig {
+  api_site: Record<string, unknown>;
+  custom_category?: Record<string, unknown>[];
+  lives?: Record<string, unknown>;
+  cache_time?: number;
+  [key: string]: unknown;
+}
+
+export function mergeNormalizedConfigs(
+  configs: Record<string, unknown>[]
+): MergedConfig {
+  if (configs.length === 1) {
+    return configs[0] as unknown as MergedConfig;
+  }
+  const merged: Record<string, unknown> = {};
+  const apiSite: Record<string, unknown> = {};
+  const apiSiteIndex = new Map<string, string>();
+  const customCategories: Record<string, unknown>[] = [];
+  const categoryIndex = new Set<string>();
+  const lives: Record<string, unknown> = {};
+  let cacheTime: number | undefined;
+
+  for (const config of configs) {
+    const sites = isObject(config.api_site) ? config.api_site : {};
+    for (const [key, raw] of Object.entries(sites)) {
+      if (!isObject(raw)) continue;
+      const site = { ...raw };
+      let finalKey = key;
+      let seq = 2;
+      while (Object.prototype.hasOwnProperty.call(apiSite, finalKey)) {
+        // 同 key 同内容视为同一源，跳过重复
+        if (apiSiteIndex.get(finalKey) === siteSignature(site)) break;
+        finalKey = `${key}_${seq++}`;
+      }
+      if (Object.prototype.hasOwnProperty.call(apiSite, finalKey)) continue;
+      if (finalKey !== key) {
+        site.runnerSite =
+          typeof site.runnerSite === 'string' && site.runnerSite
+            ? site.runnerSite
+            : finalKey;
+      }
+      apiSite[finalKey] = site;
+      apiSiteIndex.set(finalKey, siteSignature(site));
+    }
+    const categories = Array.isArray(config.custom_category)
+      ? config.custom_category
+      : [];
+    for (const raw of categories) {
+      if (!isObject(raw)) continue;
+      const category = raw as Record<string, unknown>;
+      const index = `${category.query}+${category.type}`;
+      if (categoryIndex.has(index)) continue;
+      categoryIndex.add(index);
+      customCategories.push(category);
+    }
+    const configLives = isObject(config.lives) ? config.lives : {};
+    for (const [key, live] of Object.entries(configLives)) {
+      if (Object.prototype.hasOwnProperty.call(lives, key)) continue;
+      lives[key] = live;
+    }
+    if (typeof config.cache_time === 'number') {
+      cacheTime =
+        cacheTime === undefined
+          ? config.cache_time
+          : Math.min(cacheTime, config.cache_time);
+    }
+  }
+
+  merged.api_site = apiSite;
+  if (customCategories.length > 0) merged.custom_category = customCategories;
+  if (Object.keys(lives).length > 0) merged.lives = lives;
+  if (cacheTime !== undefined) merged.cache_time = cacheTime;
+  return merged as MergedConfig;
+}

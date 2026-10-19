@@ -4045,7 +4045,8 @@ const ConfigFileComponent = ({
   const { alertModal, showAlert, hideAlert } = useAlertModal();
   const { isLoading, withLoading } = useLoadingState();
   const [configContent, setConfigContent] = useState('');
-  const [subscriptionUrl, setSubscriptionUrl] = useState('');
+  // 多行订阅地址：每行一个，支持批量订阅与多仓接口
+  const [subscriptionUrls, setSubscriptionUrls] = useState('');
   const [autoUpdate, setAutoUpdate] = useState(false);
   const [lastCheckTime, setLastCheckTime] = useState<string>('');
 
@@ -4054,16 +4055,28 @@ const ConfigFileComponent = ({
       setConfigContent(config.ConfigFile);
     }
     if (config?.ConfigSubscribtion) {
-      setSubscriptionUrl(config.ConfigSubscribtion.URL);
+      const urls = (
+        config.ConfigSubscribtion.URLs?.length
+          ? config.ConfigSubscribtion.URLs
+          : [config.ConfigSubscribtion.URL]
+      ).filter(Boolean);
+      setSubscriptionUrls(urls.join('\n'));
       setAutoUpdate(config.ConfigSubscribtion.AutoUpdate);
       setLastCheckTime(config.ConfigSubscribtion.LastCheck || '');
     }
   }, [config]);
 
-  // 拉取订阅配置
+  const parseSubscriptionUrlLines = () =>
+    subscriptionUrls
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+  // 批量拉取订阅配置：单个失败不阻断其余，多仓接口自动展开
   const handleFetchConfig = async () => {
-    if (!subscriptionUrl.trim()) {
-      showError('请输入订阅URL', showAlert);
+    const urls = parseSubscriptionUrlLines();
+    if (urls.length === 0) {
+      showError('请输入至少一个订阅URL', showAlert);
       return;
     }
 
@@ -4072,7 +4085,7 @@ const ConfigFileComponent = ({
         const resp = await fetch('/api/admin/config_subscription/fetch', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: subscriptionUrl }),
+          body: JSON.stringify({ urls }),
         });
 
         if (!resp.ok) {
@@ -4086,7 +4099,25 @@ const ConfigFileComponent = ({
           // 更新本地配置的最后检查时间
           const currentTime = new Date().toISOString();
           setLastCheckTime(currentTime);
-          showSuccess('配置拉取成功', showAlert);
+          const failCount = data.failures?.length || 0;
+          if (failCount > 0) {
+            const details = (data.failures || [])
+              .map(
+                (f: { url: string; error: string }) => `${f.url}: ${f.error}`
+              )
+              .join('\n');
+            showError(
+              `部分订阅拉取失败（${failCount} 个）：\n${details}`,
+              showAlert
+            );
+          } else {
+            showSuccess(
+              `配置拉取成功：已合并 ${
+                data.mergedUrls?.length || urls.length
+              } 个订阅`,
+              showAlert
+            );
+          }
         } else {
           showError('拉取失败：未获取到配置内容', showAlert);
         }
@@ -4106,7 +4137,7 @@ const ConfigFileComponent = ({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             configFile: configContent,
-            subscriptionUrl,
+            subscriptionUrls: parseSubscriptionUrlLines(),
             autoUpdate,
             lastCheckTime: lastCheckTime || new Date().toISOString(),
           }),
@@ -4151,32 +4182,39 @@ const ConfigFileComponent = ({
         </div>
 
         <div className='space-y-6'>
-          {/* 订阅URL输入 */}
+          {/* 订阅URL输入（多行批量） */}
           <div>
             <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3'>
-              订阅URL
+              订阅URL（每行一个，支持批量）
             </label>
-            <input
-              type='url'
-              value={subscriptionUrl}
-              onChange={(e) => setSubscriptionUrl(e.target.value)}
-              placeholder='https://example.com/config.json'
+            <textarea
+              value={subscriptionUrls}
+              onChange={(e) => setSubscriptionUrls(e.target.value)}
+              placeholder={
+                'https://example.com/config.json\nhttps://example.com/tvbox.json'
+              }
+              rows={5}
               disabled={false}
-              className='w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-200 shadow-sm hover:border-gray-400 dark:hover:border-gray-500'
+              className='w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-200 shadow-sm hover:border-gray-400 dark:hover:border-gray-500 resize-y'
             />
             <p className='mt-2 text-xs text-gray-500 dark:text-gray-400'>
-              输入配置文件的订阅地址，支持普通 JSON 或 Base58 编码的
-              JSON，自动识别格式
+              每行一个订阅地址，支持普通 JSON、Base58 编码 JSON 与 TVBox
+              接口格式；多仓（含 urls
+              列表）接口会自动展开一层，全部订阅合并去重后导入
             </p>
           </div>
 
-          {/* 拉取配置按钮 */}
+          {/* 批量拉取配置按钮 */}
           <div className='pt-2'>
             <button
               onClick={handleFetchConfig}
-              disabled={isLoading('fetchConfig') || !subscriptionUrl.trim()}
+              disabled={
+                isLoading('fetchConfig') ||
+                parseSubscriptionUrlLines().length === 0
+              }
               className={`w-full px-6 py-3 rounded-lg font-medium transition-all duration-200 ${
-                isLoading('fetchConfig') || !subscriptionUrl.trim()
+                isLoading('fetchConfig') ||
+                parseSubscriptionUrlLines().length === 0
                   ? buttonStyles.disabled
                   : buttonStyles.success
               }`}
@@ -4187,7 +4225,7 @@ const ConfigFileComponent = ({
                   拉取中…
                 </div>
               ) : (
-                '拉取配置'
+                `拉取配置（${parseSubscriptionUrlLines().length} 个订阅）`
               )}
             </button>
           </div>

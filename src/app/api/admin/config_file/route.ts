@@ -6,6 +6,7 @@ import { getAuthInfoFromCookie } from '@/lib/auth';
 import { getConfig, refineConfig } from '@/lib/config';
 import { parseConfigSubscription } from '@/lib/config-subscription';
 import { db } from '@/lib/db';
+import { normalizeSubscriptionUrls } from '@/lib/subscription-remote';
 
 export const runtime = 'nodejs';
 
@@ -40,7 +41,13 @@ export async function POST(request: NextRequest) {
 
     // 获取请求体
     const body = await request.json();
-    const { configFile, subscriptionUrl, autoUpdate, lastCheckTime } = body;
+    const {
+      configFile,
+      subscriptionUrl,
+      subscriptionUrls,
+      autoUpdate,
+      lastCheckTime,
+    } = body;
 
     if (!configFile || typeof configFile !== 'string') {
       return NextResponse.json(
@@ -69,8 +76,19 @@ export async function POST(request: NextRequest) {
     }
 
     // 更新订阅配置
-    if (subscriptionUrl !== undefined) {
-      adminConfig.ConfigSubscribtion.URL = subscriptionUrl;
+    if (subscriptionUrls !== undefined) {
+      const urls = normalizeSubscriptionUrls(subscriptionUrls);
+      adminConfig.ConfigSubscribtion.URLs = urls;
+      if (subscriptionUrl !== undefined) {
+        adminConfig.ConfigSubscribtion.URL = subscriptionUrl;
+      } else {
+        adminConfig.ConfigSubscribtion.URL = urls[0] || '';
+      }
+    } else if (subscriptionUrl !== undefined) {
+      // 兼容旧版单订阅入参：单 URL 视为仅保留该订阅
+      const urls = normalizeSubscriptionUrls(subscriptionUrl);
+      adminConfig.ConfigSubscribtion.URLs = urls;
+      adminConfig.ConfigSubscribtion.URL = urls[0] || '';
     }
     if (autoUpdate !== undefined) {
       adminConfig.ConfigSubscribtion.AutoUpdate = autoUpdate;

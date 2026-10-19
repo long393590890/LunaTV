@@ -1,6 +1,8 @@
 export interface AdminConfig {
   ConfigSubscribtion: {
     URL: string;
+    // 批量订阅：每行一个地址；URL 保留作为首个订阅以兼容旧配置
+    URLs?: string[];
     AutoUpdate: boolean;
     LastCheck: string;
   };

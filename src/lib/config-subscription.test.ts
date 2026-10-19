@@ -1,6 +1,8 @@
 /** @jest-environment node */
 /* eslint-env jest */
 import {
+  extractStoreHouseUrls,
+  mergeNormalizedConfigs,
   normalizeConfigObject,
   parseConfigSubscription,
 } from './config-subscription';
@@ -169,4 +171,120 @@ test('Base58 解码后同样校验 UTF-8、JSON 语法和配置结构', async ()
   await expect(
     parseConfigSubscription(bs58.encode(Uint8Array.from([255])))
   ).rejects.toThrow('解码失败');
+});
+
+test('多仓配置识别：仅含 urls 列表时返回子地址，其余返回 null', () => {
+  expect(
+    extractStoreHouseUrls({
+      urls: [
+        { name: '甲', url: 'http://a.com/x.json' },
+        { url: 'https://b.com/y.json' },
+      ],
+    })
+  ).toEqual(['http://a.com/x.json', 'https://b.com/y.json']);
+  expect(extractStoreHouseUrls({ urls: ['http://a.com/x.json'] })).toEqual([
+    'http://a.com/x.json',
+  ]);
+  expect(extractStoreHouseUrls({ urls: [] })).toBeNull();
+  expect(extractStoreHouseUrls({ urls: [{ name: '无地址' }] })).toBeNull();
+  expect(
+    extractStoreHouseUrls({ urls: ['ftp://bad', 'not a url'] })
+  ).toBeNull();
+  expect(
+    extractStoreHouseUrls({
+      urls: [{ url: 'http://a.com/x.json' }],
+      sites: [{ key: 'a', name: '源', api: 'api' }],
+    })
+  ).toBeNull();
+  expect(extractStoreHouseUrls({})).toBeNull();
+  expect(extractStoreHouseUrls(null)).toBeNull();
+});
+
+test('合并配置：同 key 同源去重，同 key 异源自动加后缀', () => {
+  const first = JSON.parse(
+    JSON.stringify({
+      api_site: {
+        demo: { name: '源A', api: 'https://a.com/api', protocol: 'cms' },
+      },
+    })
+  );
+  const second = JSON.parse(
+    JSON.stringify({
+      api_site: {
+        demo: { name: '源A', api: 'https://a.com/api', protocol: 'cms' },
+        other: { name: '源B', api: 'https://b.com/api', protocol: 'cms' },
+      },
+    })
+  );
+  const third = JSON.parse(
+    JSON.stringify({
+      api_site: {
+        demo: { name: '同名不同源', api: 'https://c.com/api', protocol: 'cms' },
+      },
+    })
+  );
+  const merged = mergeNormalizedConfigs([first, second, third]);
+  const apiSite = merged.api_site as Record<string, Record<string, string>>;
+  const keys = Object.keys(merged.api_site);
+  expect(keys).toEqual(expect.arrayContaining(['demo', 'other', 'demo_2']));
+  expect(keys).toHaveLength(3);
+  expect(apiSite.demo.api).toBe('https://a.com/api');
+  expect(apiSite.demo_2.api).toBe('https://c.com/api');
+  // 冲突后缀源的 runnerSite 跟随新 key
+  expect(apiSite.demo_2.runnerSite).toBe('demo_2');
+  // 合并结果仍是合法配置
+  expect(() =>
+    normalizeConfigObject(JSON.parse(JSON.stringify(merged)))
+  ).not.toThrow();
+});
+
+test('合并配置：custom_category、lives、cache_time 一并合并', () => {
+  const first = {
+    api_site: { a: { name: '源A', api: 'https://a.com/api', protocol: 'cms' } },
+    custom_category: [{ type: 'movie', query: '豆瓣热门' }],
+    lives: { live1: { name: '直播1', url: 'http://a.com/live.m3u' } },
+    cache_time: 3600,
+  };
+  const second = {
+    api_site: { b: { name: '源B', api: 'https://b.com/api', protocol: 'cms' } },
+    custom_category: [
+      { type: 'movie', query: '豆瓣热门' },
+      { type: 'tv', query: '豆瓣剧集' },
+    ],
+    lives: {
+      live1: { name: '直播1', url: 'http://a.com/live.m3u' },
+      live2: { name: '直播2', url: 'http://b.com/live.m3u' },
+    },
+    cache_time: 7200,
+  };
+  const merged = mergeNormalizedConfigs([first, second]);
+  expect(Object.keys(merged.api_site)).toEqual(['a', 'b']);
+  expect(merged.custom_category).toEqual([
+    { type: 'movie', query: '豆瓣热门' },
+    { type: 'tv', query: '豆瓣剧集' },
+  ]);
+  expect(Object.keys(merged.lives ?? {})).toEqual(['live1', 'live2']);
+  expect(merged.cache_time).toBe(3600);
+});
+
+test('合并配置：单配置直接返回，猫源冲突键仍可注册到 runner', () => {
+  const single = {
+    api_site: {
+      cat: { name: '猫源', api: 'https://a.com/cat.js', protocol: 'catjs' },
+    },
+  };
+  expect(mergeNormalizedConfigs([single])).toEqual(single);
+  const conflicting = {
+    api_site: {
+      cat: {
+        name: '另一猫源',
+        api: 'https://b.com/cat.js',
+        protocol: 'catjs',
+        runnerSite: 'fixed-runner-key',
+      },
+    },
+  };
+  const merged = mergeNormalizedConfigs([single, conflicting]);
+  const cat2 = merged.api_site.cat_2 as Record<string, string>;
+  expect(cat2.runnerSite).toBe('fixed-runner-key');
 });

@@ -6,6 +6,13 @@
       "workDirectory": "./data/reviewed-cat",
       "dependencyDirectory": "/sources/node_modules",
       "config": { "color": [] }
+    },
+    "remote-cat": {
+      "scriptPath": "/sources/auto/reviewed-remote-source.cjs",
+      "sha256": "REPLACE_WITH_REVIEWED_REMOTE_FILE_SHA256",
+      "scriptUrl": "https://example.com/reviewed-remote-source.cjs",
+      "workDirectory": "./data/remote-cat",
+      "config": { "color": [] }
     }
   },
   "sites": [

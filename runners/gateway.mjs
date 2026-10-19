@@ -1,5 +1,5 @@
 import http from 'node:http';
-import { readFile, mkdir, realpath } from 'node:fs/promises';
+import { readFile, mkdir, realpath, writeFile, unlink } from 'node:fs/promises';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { fork } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
@@ -10,6 +10,8 @@ const keyPattern = /^[A-Za-z0-9_-]{1,100}$/;
 const actions = new Set(['init', 'search', 'detail', 'play']);
 const bodyLimit = 64 * 1024;
 const responseLimit = 4 * 1024 * 1024;
+const scriptLimit = 8 * 1024 * 1024;
+const scriptDownloadTimeoutMs = 30_000;
 
 class RunnerError extends Error {
   constructor(code, status = 502) { super(code); this.code = code; this.status = status; }
@@ -59,6 +61,63 @@ export async function createGateway({ config, token, configDirectory = directory
   let activeRequests = 0;
   let closing = false;
 
+  async function downloadRuntimeScript(runtime, targetPath) {
+    // 显式 opt-in：scriptUrl 仅在本地文件缺失时下载一次，成功后由 sha256 指纹钉死版本，
+    // 之后永不自动更新；更新必须由运维修改指纹并清理文件后重新触发。
+    let url;
+    try {
+      url = new URL(runtime.scriptUrl);
+    } catch {
+      throw new RunnerError('runtime_unconfigured', 503);
+    }
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
+      throw new RunnerError('runtime_unconfigured', 503);
+    }
+    let response;
+    try {
+      response = await fetch(url, {
+        redirect: 'error',
+        signal: AbortSignal.timeout(scriptDownloadTimeoutMs),
+        cache: 'no-store',
+      });
+    } catch {
+      throw new RunnerError('script_download_failed', 503);
+    }
+    if (!response.ok) throw new RunnerError('script_download_failed', 503);
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.length === 0 || bytes.length > scriptLimit) {
+      throw new RunnerError('script_download_failed', 503);
+    }
+    await mkdir(dirname(targetPath), { recursive: true });
+    await writeFile(targetPath, bytes);
+  }
+
+  async function prepareRuntimeScript(runtime) {
+    const targetPath = resolve(configDirectory, runtime.scriptPath);
+    let scriptPath = null;
+    try {
+      scriptPath = await realpath(targetPath);
+    } catch {
+      // 本地缺失：仅当显式配置 scriptUrl 时下载一次
+    }
+    let downloaded = false;
+    if (!scriptPath) {
+      if (typeof runtime.scriptUrl !== 'string') {
+        throw new RunnerError('runtime_unconfigured', 503);
+      }
+      await downloadRuntimeScript(runtime, targetPath);
+      downloaded = true;
+      scriptPath = await realpath(targetPath);
+    }
+    const bytes = await readFile(scriptPath);
+    if (createHash('sha256').update(bytes).digest('hex') !== runtime.sha256.toLowerCase()) {
+      // 下载内容与配置指纹不符：删除毒化文件，避免本地缓存永远挡住重试
+      if (downloaded) await unlink(scriptPath).catch(() => {});
+      throw new RunnerError('script_hash_mismatch', 503);
+    }
+    return scriptPath;
+  }
+
   async function catRuntime(id) {
     if (closing) throw new RunnerError('runtime_unavailable', 503);
     if (childStates.has(id)) return childStates.get(id).promise;
@@ -70,11 +129,7 @@ export async function createGateway({ config, token, configDirectory = directory
     state.promise = (async () => {
       let scriptPath;
       try {
-        scriptPath = await realpath(resolve(configDirectory, runtime.scriptPath));
-        const bytes = await readFile(scriptPath);
-        if (createHash('sha256').update(bytes).digest('hex') !== runtime.sha256.toLowerCase()) {
-          throw new RunnerError('script_hash_mismatch', 503);
-        }
+        scriptPath = await prepareRuntimeScript(runtime);
       } catch (error) {
         if (error instanceof RunnerError) throw error;
         throw new RunnerError('runtime_unconfigured', 503);

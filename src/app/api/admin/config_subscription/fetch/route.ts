@@ -3,7 +3,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
-import { parseConfigSubscription } from '@/lib/config-subscription';
+import {
+  fetchAndMergeSubscriptions,
+  normalizeSubscriptionUrls,
+} from '@/lib/subscription-remote';
 
 export const runtime = 'nodejs';
 
@@ -22,41 +25,38 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { url } = await request.json();
+    const body = await request.json().catch(() => ({}));
+    const urls = normalizeSubscriptionUrls(
+      Array.isArray(body?.urls) ? body.urls : body?.url
+    );
 
-    if (!url) {
-      return NextResponse.json({ error: '缺少URL参数' }, { status: 400 });
+    if (urls.length === 0) {
+      return NextResponse.json({ error: '缺少有效的订阅URL' }, { status: 400 });
     }
 
-    // 直接 fetch URL 获取配置内容
-    const response = await fetch(url);
+    // 批量拉取：单个失败不阻断其余；多仓格式自动展开一层
+    const { configContent, mergedUrls, failures } =
+      await fetchAndMergeSubscriptions(urls);
 
-    if (!response.ok) {
+    if (configContent === null) {
       return NextResponse.json(
-        { error: `请求失败: ${response.status} ${response.statusText}` },
-        { status: response.status }
-      );
-    }
-
-    const configContent = await response.text();
-
-    let decodedContent: string;
-    try {
-      decodedContent = await parseConfigSubscription(
-        configContent,
-        response.url || url
-      );
-    } catch (error) {
-      return NextResponse.json(
-        { error: error instanceof Error ? error.message : '订阅配置解析失败' },
-        { status: 400 }
+        {
+          error: `全部订阅拉取失败（${failures.length} 个）`,
+          failures,
+        },
+        { status: 502 }
       );
     }
 
     return NextResponse.json({
       success: true,
-      configContent: decodedContent,
-      message: '配置拉取成功',
+      configContent,
+      mergedUrls,
+      failures,
+      message:
+        failures.length > 0
+          ? `配置拉取成功：${mergedUrls.length} 个订阅已合并，${failures.length} 个失败`
+          : '配置拉取成功',
     });
   } catch (error) {
     console.error('拉取配置失败:', error);

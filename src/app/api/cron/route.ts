@@ -3,11 +3,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { getConfig, refineConfig } from '@/lib/config';
-import { parseConfigSubscription } from '@/lib/config-subscription';
 import { db } from '@/lib/db';
 import { fetchVideoDetail } from '@/lib/fetchVideoDetail';
 import { refreshLiveChannels } from '@/lib/live';
 import { splitStorageKey } from '@/lib/storage-key';
+import {
+  fetchAndMergeSubscriptions,
+  normalizeSubscriptionUrls,
+} from '@/lib/subscription-remote';
 import { SearchResult } from '@/lib/types';
 
 export const runtime = 'nodejs';
@@ -106,26 +109,38 @@ async function refreshConfig() {
   if (
     config &&
     config.ConfigSubscribtion &&
-    config.ConfigSubscribtion.URL &&
     config.ConfigSubscribtion.AutoUpdate
   ) {
+    // 批量订阅：URLs 为完整列表，URL 保留兼容旧配置
+    const urls = normalizeSubscriptionUrls([
+      ...(config.ConfigSubscribtion.URLs || []),
+      config.ConfigSubscribtion.URL,
+    ]);
+    if (urls.length === 0) {
+      console.log('跳过刷新：未配置订阅地址');
+      return;
+    }
     try {
-      const response = await fetch(config.ConfigSubscribtion.URL);
-
-      if (!response.ok) {
-        throw new Error(`请求失败: ${response.status} ${response.statusText}`);
+      const { configContent, mergedUrls, failures } =
+        await fetchAndMergeSubscriptions(urls);
+      if (configContent === null) {
+        throw new Error(
+          `全部订阅拉取失败：${failures
+            .map((f) => `${f.url} (${f.error})`)
+            .join('; ')}`
+        );
       }
-
-      const configContent = await response.text();
-
-      const decodedContent = await parseConfigSubscription(
-        configContent,
-        response.url || config.ConfigSubscribtion.URL
-      );
-      config.ConfigFile = decodedContent;
+      if (failures.length > 0) {
+        console.warn(
+          `部分订阅拉取失败（${failures.length} 个）：`,
+          failures.map((f) => `${f.url} (${f.error})`).join('; ')
+        );
+      }
+      config.ConfigFile = configContent;
       config.ConfigSubscribtion.LastCheck = new Date().toISOString();
       config = refineConfig(config);
       await db.saveAdminConfig(config);
+      console.log(`订阅刷新完成：成功合并 ${mergedUrls.length} 个订阅`);
     } catch (e) {
       console.error('刷新配置失败:', e);
     }

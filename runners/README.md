@@ -6,6 +6,7 @@
 
 1. 复制 `config.example.json` 为部署目录的 `config.json`，保留需要的 sites。`key` 是应用使用的注册 ID；`upstreamKey` 是猫源包内部的 ID。`scriptPath` 与 `workDirectory` 相对于配置文件目录解析。脚本需要 `.cjs` 扩展名或 CommonJS 包环境。
 2. 在独立目录准备审查过的源包，运行 `node -e "console.log(require('node:crypto').createHash('sha256').update(require('node:fs').readFileSync(process.argv[1])).digest('hex'))" /sources/reviewed-source.cjs` 获取固定指纹，将其填入配置。不要盲目自动接受更新后的指纹。
+   - `scriptUrl`（可选）：显声明的远程来源地址。仅当 `scriptPath` 指向的本地文件不存在时，网关会按该地址下载一次（8MB 上限、30 秒超时、禁止重定向），并强制校验 `sha256` 指纹；不匹配则删除下载文件并拒绝启动。文件落地后网关不再访问 `scriptUrl`，版本永远由指纹钉死；更新源必须由运维核对新指纹、修改配置并清理旧文件。`scriptUrl` 不改变"审查后才可运行"的原则：指纹仍是运维确认过的值。
 3. 在服务进程环境设置 `RUNNER_CONFIG`（配置绝对路径）、`RUNNER_TOKEN`（至少 24 字符随机密钥），然后执行 `node runners/gateway.mjs`。默认监听 `127.0.0.1:8787`；`HOST`、`PORT` 可在服务端设置。跨机器访问需自行配置经过鉴权的 HTTPS 反向代理，或使用受信私网。
 
 网关按需创建猫源子进程。子进程以 `catServerFactory(handler)` 创建原生 HTTP Server，强制监听 loopback 随机端口；提供 `catDartServerPort() => 0`，再验证 `start/stop` 导出并显式调用 `start(config)`。该契约来自项目现有验证脚本的真实宿主，不依赖来源自动启动环境变量。启动前父、子进程分别校验文件 SHA256；不要在运行中修改源目录。Dart 专用账号或交互动作可能不可用。
@@ -28,7 +29,7 @@
 
 网关只接受已注册 key。客户端无法指定或覆盖脚本地址、JAR、桥接地址、ext。首次调用先请求内部 `/spider/:upstreamKey/3/init`，然后转发既有 `/spider/:upstreamKey/3/{search|detail|play}`；上游 JSON 原样返回。播放 `parse`、`header`、不透明 ID 和线路不作猜测性处理。`parse=1` 仍需应用端真实解析流程，不能当直连成功。
 
-错误为 `{"error":"code"}`，不会回显原始上游消息：401 `unauthorized`，404 `unknown_site/not_found`，400 参数错误，413 `body_too_large`，429 `runner_busy`，503 `runtime_unconfigured/runtime_unavailable/script_hash_mismatch/unsupported_runtime`，502 `source_error/invalid_upstream_response`。
+错误为 `{"error":"code"}`，不会回显原始上游消息：401 `unauthorized`，404 `unknown_site/not_found`，400 参数错误，413 `body_too_large`，429 `runner_busy`，503 `runtime_unconfigured/runtime_unavailable/script_hash_mismatch/script_download_failed/unsupported_runtime`，502 `source_error/invalid_upstream_response`。
 
 ## Android CSP 桥接要求
 

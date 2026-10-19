@@ -4,6 +4,7 @@ import { db } from '@/lib/db';
 
 import { AdminConfig } from './admin.types';
 import { normalizeConfigObject } from './config-subscription';
+import { normalizeSubscriptionUrls } from './subscription-remote';
 
 export interface ApiSite {
   key: string;
@@ -226,12 +227,9 @@ export function refineConfig(adminConfig: AdminConfig): AdminConfig {
 
 async function getInitConfig(
   configFile: string,
-  subConfig: {
-    URL: string;
-    AutoUpdate: boolean;
-    LastCheck: string;
-  } = {
+  subConfig: AdminConfig['ConfigSubscribtion'] = {
     URL: '',
+    URLs: [],
     AutoUpdate: false,
     LastCheck: '',
   }
@@ -389,6 +387,20 @@ export async function getConfig(): Promise<AdminConfig> {
 
 export function configSelfCheck(adminConfig: AdminConfig): AdminConfig {
   // 确保必要的属性存在和初始化
+  if (!adminConfig.ConfigSubscribtion) {
+    adminConfig.ConfigSubscribtion = {
+      URL: '',
+      AutoUpdate: false,
+      LastCheck: '',
+    };
+  }
+  // 订阅列表清洗：去重、剔除非法地址；URL 保留为首个订阅以兼容旧配置
+  const subscriptionUrls = normalizeSubscriptionUrls([
+    ...(adminConfig.ConfigSubscribtion.URLs || []),
+    adminConfig.ConfigSubscribtion.URL,
+  ]);
+  adminConfig.ConfigSubscribtion.URLs = subscriptionUrls;
+  adminConfig.ConfigSubscribtion.URL = subscriptionUrls[0] || '';
   if (!adminConfig.UserConfig) {
     adminConfig.UserConfig = { Users: [] };
   }
