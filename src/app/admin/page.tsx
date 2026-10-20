@@ -5004,6 +5004,42 @@ const LiveSourceConfig = ({
     });
   };
 
+  // iptv-org 公共源一键导入
+  const IPTVORG_PRESETS: { label: string; code: string }[] = [
+    { label: '中国大陆', code: 'cn' },
+    { label: '中国香港', code: 'hk' },
+    { label: '中国台湾', code: 'tw' },
+    { label: '日本', code: 'jp' },
+    { label: '韩国', code: 'kr' },
+    { label: '美国', code: 'us' },
+    { label: '英国', code: 'uk' },
+    { label: '全部地区', code: '' },
+  ];
+  const [iptvOrgPreset, setIptvOrgPreset] = useState<string>('cn');
+  const handleImportIptvOrg = async () => {
+    const preset = IPTVORG_PRESETS.find((p) => p.code === iptvOrgPreset);
+    if (!preset) return;
+    const query = preset.code ? `?country=${preset.code}` : '';
+    const url = `${window.location.origin}/api/iptvorg/m3u${query}`;
+    await withLoading('importIptvOrg', () =>
+      callLiveSourceApi({
+        action: 'add',
+        key: preset.code ? `iptvorg-${preset.code}` : 'iptvorg-all',
+        name: `iptv-org ${preset.label}`,
+        url,
+      })
+    )
+      .then(() =>
+        showAlert({
+          type: 'success',
+          title: '导入成功',
+          message: 'iptv-org 直播源已添加，频道正在后台拉取',
+          timer: 2500,
+        })
+      )
+      .catch(() => {});
+  };
+
   // 刷新直播源
   const handleRefreshLiveSources = async () => {
     if (isRefreshing) return;
@@ -5259,6 +5295,38 @@ const LiveSourceConfig = ({
             {showAddForm ? '取消' : '添加直播源'}
           </button>
         </div>
+      </div>
+
+      {/* iptv-org 公共直播源快速导入 */}
+      <div className='flex flex-wrap items-center gap-2 p-3 bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700'>
+        <span className='text-sm text-gray-600 dark:text-gray-400'>
+          iptv-org 公共源：
+        </span>
+        <select
+          value={iptvOrgPreset}
+          onChange={(e) => setIptvOrgPreset(e.target.value)}
+          className='px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100'
+        >
+          {IPTVORG_PRESETS.map((p) => (
+            <option key={p.code || 'all'} value={p.code}>
+              {p.label}
+            </option>
+          ))}
+        </select>
+        <button
+          onClick={handleImportIptvOrg}
+          disabled={isLoading('importIptvOrg')}
+          className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
+            isLoading('importIptvOrg')
+              ? 'bg-gray-400 cursor-not-allowed text-white'
+              : 'bg-green-600 hover:bg-green-700 text-white'
+          }`}
+        >
+          {isLoading('importIptvOrg') ? '导入中...' : '一键导入'}
+        </button>
+        <span className='text-xs text-gray-400 dark:text-gray-500'>
+          数据来自 iptv-org 开源项目，首次导入需要拉取全量数据，可能耗时较长
+        </span>
       </div>
 
       {showAddForm && (
