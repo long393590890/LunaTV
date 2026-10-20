@@ -24,6 +24,9 @@ export interface LiveChannels {
     logo: string;
     group: string;
     url: string;
+    // 来自 m3u 的 #EXTVLCOPT 扩展行：该流声明要求的 UA/Referer（iptv-org 等源提供）
+    ua?: string;
+    referer?: string;
   }[];
   epgUrl: string;
   epgs: {
@@ -211,6 +214,8 @@ function parseM3U(
     logo: string;
     group: string;
     url: string;
+    ua?: string;
+    referer?: string;
   }[];
 } {
   const channels: {
@@ -220,6 +225,8 @@ function parseM3U(
     logo: string;
     group: string;
     url: string;
+    ua?: string;
+    referer?: string;
   }[] = [];
 
   const lines = m3uContent
@@ -237,6 +244,18 @@ function parseM3U(
       // 支持两种格式：x-tvg-url 和 url-tvg
       const tvgUrlMatch = line.match(/(?:x-tvg-url|url-tvg)="([^"]*)"/);
       tvgUrl = tvgUrlMatch ? tvgUrlMatch[1].split(',')[0].trim() : '';
+      continue;
+    }
+
+    // #EXTVLCOPT 扩展行（位于 URL 行之后）：流级 UA/Referer 要求，关联到最近添加的频道
+    if (line.startsWith('#EXTVLCOPT:')) {
+      const last = channels[channels.length - 1];
+      if (last) {
+        const uaMatch = line.match(/^#EXTVLCOPT:http-user-agent=(.*)$/i);
+        if (uaMatch) last.ua = uaMatch[1].trim() || undefined;
+        const refMatch = line.match(/^#EXTVLCOPT:http-referrer=(.*)$/i);
+        if (refMatch) last.referer = refMatch[1].trim() || undefined;
+      }
       continue;
     }
 
