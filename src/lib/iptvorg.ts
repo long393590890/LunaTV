@@ -26,6 +26,10 @@ export interface IptvOrgStream {
   title?: string | null;
   quality?: string | null;
   url: string;
+  // 部分流要求特定 UA/Referer 才能访问；浏览器端无法自定义 UA，
+  // 这里以 #EXTVLCOPT 扩展行输出，供 VLC/Kodi/TiviMate 等外部播放器使用
+  user_agent?: string | null;
+  referrer?: string | null;
 }
 
 interface IptvOrgSnapshot {
@@ -117,6 +121,8 @@ function buildSnapshot(raw: {
             : typeof s.title === 'string'
             ? s.title
             : null,
+        user_agent: typeof s.user_agent === 'string' ? s.user_agent : null,
+        referrer: typeof s.referrer === 'string' ? s.referrer : null,
       };
       const list = streams.get(channelId);
       if (list) list.push(entry);
@@ -280,10 +286,18 @@ export function buildIptvOrgM3u(options: BuildM3uOptions = {}): string {
       if (logo) attrs.push(`tvg-logo="${logo.replace(/"/g, '%22')}"`);
       attrs.push(`group-title="${groupTitle.replace(/"/g, '%22')}"`);
       const quality = stream.quality ? ` [${stream.quality}]` : '';
+      // EXTVLCOPT 行必须位于 URL 行之后（parseM3U 要求 EXTINF 下一行是 URL）
+      let line = `#EXTINF:-1 ${attrs.join(' ')},${display}${quality}\n${
+        stream.url
+      }`;
+      if (stream.user_agent) {
+        line += `\n#EXTVLCOPT:http-user-agent=${stream.user_agent}`;
+      }
+      if (stream.referrer) {
+        line += `\n#EXTVLCOPT:http-referrer=${stream.referrer}`;
+      }
       entries.push({
-        line: `#EXTINF:-1 ${attrs.join(' ')},${display}${quality}\n${
-          stream.url
-        }`,
+        line,
         sortKey,
       });
       count += 1;

@@ -1,9 +1,19 @@
 /* eslint-disable no-constant-condition */
 
-import { getConfig } from "@/lib/config";
-import { db } from "@/lib/db";
+import { gunzipSync } from 'node:zlib';
 
-const defaultUA = 'AptvPlayer/1.4.10'
+import { getConfig } from '@/lib/config';
+import { db } from '@/lib/db';
+
+const defaultUA = 'AptvPlayer/1.4.10';
+
+// 识别 gzip 魔数（0x1f 0x8b）并解压；许多 EPG 源（如 iptv-org/epg 自建输出、epg.pw）提供 .xml.gz
+export function decodeEpgContent(buffer: Buffer): string {
+  if (buffer.length > 2 && buffer[0] === 0x1f && buffer[1] === 0x8b) {
+    return gunzipSync(buffer).toString('utf-8');
+  }
+  return buffer.toString('utf-8');
+}
 
 export interface LiveChannels {
   channelNumber: number;
@@ -31,10 +41,12 @@ export function deleteCachedLiveChannels(key: string) {
   delete cachedLiveChannels[key];
 }
 
-export async function getCachedLiveChannels(key: string): Promise<LiveChannels | null> {
+export async function getCachedLiveChannels(
+  key: string
+): Promise<LiveChannels | null> {
   if (!cachedLiveChannels[key]) {
     const config = await getConfig();
-    const liveInfo = config.LiveConfig?.find(live => live.key === key);
+    const liveInfo = config.LiveConfig?.find((live) => live.key === key);
     if (!liveInfo) {
       return null;
     }
@@ -70,7 +82,11 @@ export async function refreshLiveChannels(liveInfo: {
   const data = await response.text();
   const result = parseM3U(liveInfo.key, data);
   const epgUrl = liveInfo.epg || result.tvgUrl;
-  const epgs = await parseEpg(epgUrl, liveInfo.ua || defaultUA, result.channels.map(channel => channel.tvgId).filter(tvgId => tvgId));
+  const epgs = await parseEpg(
+    epgUrl,
+    liveInfo.ua || defaultUA,
+    result.channels.map((channel) => channel.tvgId).filter((tvgId) => tvgId)
+  );
   cachedLiveChannels[liveInfo.key] = {
     channelNumber: result.channels.length,
     channels: result.channels,
@@ -80,19 +96,25 @@ export async function refreshLiveChannels(liveInfo: {
   return result.channels.length;
 }
 
-async function parseEpg(epgUrl: string, ua: string, tvgIds: string[]): Promise<{
+async function parseEpg(
+  epgUrl: string,
+  ua: string,
+  tvgIds: string[]
+): Promise<{
   [key: string]: {
     start: string;
     end: string;
     title: string;
-  }[]
+  }[];
 }> {
   if (!epgUrl) {
     return {};
   }
 
   const tvgs = new Set(tvgIds);
-  const result: { [key: string]: { start: string; end: string; title: string }[] } = {};
+  const result: {
+    [key: string]: { start: string; end: string; title: string }[];
+  } = {};
 
   try {
     const response = await fetch(epgUrl, {
@@ -104,75 +126,65 @@ async function parseEpg(epgUrl: string, ua: string, tvgIds: string[]): Promise<{
       return {};
     }
 
-    // 使用 ReadableStream 逐行处理，避免将整个文件加载到内存
-    const reader = response.body?.getReader();
-    if (!reader) {
-      return {};
-    }
-
-    const decoder = new TextDecoder();
-    let buffer = '';
+    // 一次性读取完整内容（支持 gzip，如 .xml.gz）；EPG 通常在几 MB 量级，可控
+    const raw = Buffer.from(await response.arrayBuffer());
     let currentTvgId = '';
-    let currentProgram: { start: string; end: string; title: string } | null = null;
+    let currentProgram: { start: string; end: string; title: string } | null =
+      null;
     let shouldSkipCurrentProgram = false;
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    // 逐行解析 XMLTV
+    for (const line of decodeEpgContent(raw).split('\n')) {
+      const trimmedLine = line.trim();
+      if (!trimmedLine) continue;
 
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
+      // 解析 <programme> 标签
+      if (trimmedLine.startsWith('<programme')) {
+        // 提取 tvg-id
+        const tvgIdMatch = trimmedLine.match(/channel="([^"]*)"/);
+        currentTvgId = tvgIdMatch ? tvgIdMatch[1] : '';
 
-      // 保留最后一行（可能不完整）
-      buffer = lines.pop() || '';
+        // 提取开始时间
+        const startMatch = trimmedLine.match(/start="([^"]*)"/);
+        const start = startMatch ? startMatch[1] : '';
 
-      // 处理完整的行
-      for (const line of lines) {
-        const trimmedLine = line.trim();
-        if (!trimmedLine) continue;
+        // 提取结束时间
+        const endMatch = trimmedLine.match(/stop="([^"]*)"/);
+        const end = endMatch ? endMatch[1] : '';
 
-        // 解析 <programme> 标签
-        if (trimmedLine.startsWith('<programme')) {
-          // 提取 tvg-id
-          const tvgIdMatch = trimmedLine.match(/channel="([^"]*)"/);
-          currentTvgId = tvgIdMatch ? tvgIdMatch[1] : '';
-
-          // 提取开始时间
-          const startMatch = trimmedLine.match(/start="([^"]*)"/);
-          const start = startMatch ? startMatch[1] : '';
-
-          // 提取结束时间
-          const endMatch = trimmedLine.match(/stop="([^"]*)"/);
-          const end = endMatch ? endMatch[1] : '';
-
-          if (currentTvgId && start && end) {
-            currentProgram = { start, end, title: '' };
-            // 优化：如果当前频道不在我们关注的列表中，标记为跳过
-            shouldSkipCurrentProgram = !tvgs.has(currentTvgId);
-          }
+        if (currentTvgId && start && end) {
+          currentProgram = { start, end, title: '' };
+          // 优化：如果当前频道不在我们关注的列表中，标记为跳过
+          shouldSkipCurrentProgram = !tvgs.has(currentTvgId);
         }
-        // 解析 <title> 标签 - 只有在需要解析当前节目时才处理
-        else if (trimmedLine.startsWith('<title') && currentProgram && !shouldSkipCurrentProgram) {
-          // 处理带有语言属性的title标签，如 <title lang="zh">远方的家2025-60</title>
-          const titleMatch = trimmedLine.match(/<title(?:\s+[^>]*)?>(.*?)<\/title>/);
-          if (titleMatch && currentProgram) {
-            currentProgram.title = titleMatch[1];
+      }
+      // 解析 <title> 标签 - 只有在需要解析当前节目时才处理
+      else if (
+        trimmedLine.startsWith('<title') &&
+        currentProgram &&
+        !shouldSkipCurrentProgram
+      ) {
+        // 处理带有语言属性的title标签，如 <title lang="zh">远方的家2025-60</title>
+        const titleMatch = trimmedLine.match(
+          /<title(?:\s+[^>]*)?>(.*?)<\/title>/
+        );
+        if (titleMatch && currentProgram) {
+          currentProgram.title = titleMatch[1];
 
-            // 保存节目信息（这里不需要再检查tvgs.has，因为shouldSkipCurrentProgram已经确保了相关性）
-            if (!result[currentTvgId]) {
-              result[currentTvgId] = [];
-            }
-            result[currentTvgId].push({ ...currentProgram });
-
-            currentProgram = null;
+          // 保存节目信息（这里不需要再检查tvgs.has，因为shouldSkipCurrentProgram已经确保了相关性）
+          if (!result[currentTvgId]) {
+            result[currentTvgId] = [];
           }
-        }
-        // 处理 </programme> 标签
-        else if (trimmedLine === '</programme>') {
+          result[currentTvgId].push({ ...currentProgram });
+
           currentProgram = null;
-          currentTvgId = '';
-          shouldSkipCurrentProgram = false; // 重置跳过标志
         }
+      }
+      // 处理 </programme> 标签
+      else if (trimmedLine === '</programme>') {
+        currentProgram = null;
+        currentTvgId = '';
+        shouldSkipCurrentProgram = false; // 重置跳过标志
       }
     }
   } catch (error) {
@@ -187,7 +199,10 @@ async function parseEpg(epgUrl: string, ua: string, tvgIds: string[]): Promise<{
  * @param m3uContent M3U文件的内容字符串
  * @returns 频道信息数组
  */
-function parseM3U(sourceKey: string, m3uContent: string): {
+function parseM3U(
+  sourceKey: string,
+  m3uContent: string
+): {
   tvgUrl: string;
   channels: {
     id: string;
@@ -207,7 +222,10 @@ function parseM3U(sourceKey: string, m3uContent: string): {
     url: string;
   }[] = [];
 
-  const lines = m3uContent.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+  const lines = m3uContent
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
 
   let tvgUrl = '';
   let channelIndex = 0;
@@ -259,7 +277,7 @@ function parseM3U(sourceKey: string, m3uContent: string): {
             name,
             logo,
             group,
-            url
+            url,
           });
           channelIndex++;
         }
@@ -277,7 +295,10 @@ function parseM3U(sourceKey: string, m3uContent: string): {
 export function resolveUrl(baseUrl: string, relativePath: string) {
   try {
     // 如果已经是完整的 URL，直接返回
-    if (relativePath.startsWith('http://') || relativePath.startsWith('https://')) {
+    if (
+      relativePath.startsWith('http://') ||
+      relativePath.startsWith('https://')
+    ) {
       return relativePath;
     }
 
@@ -311,8 +332,8 @@ function fallbackUrlResolve(baseUrl: string, relativePath: string) {
     return `${urlObj.protocol}//${urlObj.host}${relativePath}`;
   } else if (relativePath.startsWith('../')) {
     // 上级目录相对路径 (../path/to/file)
-    const segments = base.split('/').filter(s => s);
-    const relativeSegments = relativePath.split('/').filter(s => s);
+    const segments = base.split('/').filter((s) => s);
+    const relativeSegments = relativePath.split('/').filter((s) => s);
 
     for (const segment of relativeSegments) {
       if (segment === '..') {
@@ -326,7 +347,9 @@ function fallbackUrlResolve(baseUrl: string, relativePath: string) {
     return `${urlObj.protocol}//${urlObj.host}/${segments.join('/')}`;
   } else {
     // 当前目录相对路径 (file.ts 或 ./file.ts)
-    const cleanRelative = relativePath.startsWith('./') ? relativePath.slice(2) : relativePath;
+    const cleanRelative = relativePath.startsWith('./')
+      ? relativePath.slice(2)
+      : relativePath;
     return base + cleanRelative;
   }
 }
@@ -337,11 +360,14 @@ export function getBaseUrl(m3u8Url: string) {
     const url = new URL(m3u8Url);
     // 如果 URL 以 .m3u8 结尾，移除文件名
     if (url.pathname.endsWith('.m3u8')) {
-      url.pathname = url.pathname.substring(0, url.pathname.lastIndexOf('/') + 1);
+      url.pathname = url.pathname.substring(
+        0,
+        url.pathname.lastIndexOf('/') + 1
+      );
     } else if (!url.pathname.endsWith('/')) {
       url.pathname += '/';
     }
-    return url.protocol + "//" + url.host + url.pathname;
+    return url.protocol + '//' + url.host + url.pathname;
   } catch (error) {
     return m3u8Url.endsWith('/') ? m3u8Url : m3u8Url + '/';
   }

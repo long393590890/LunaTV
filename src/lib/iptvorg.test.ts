@@ -159,6 +159,39 @@ describe('buildIptvOrgM3u', () => {
     expect(m3u).not.toContain('tvg-logo=');
   });
 
+  test('带 user_agent/referrer 的流输出 EXTVLCOPT 行（位于 URL 之后）', () => {
+    __setCachedSnapshotForTest(
+      __buildSnapshotForTest(
+        [
+          {
+            id: 'ua1',
+            name: 'UA TV',
+            country: 'CN',
+            categories: ['general'],
+            closed: false,
+          },
+        ],
+        [
+          {
+            channel: 'ua1',
+            url: 'https://ua.example.com/live.m3u8',
+            user_agent: 'okhttp/4.9.0',
+            referrer: 'https://tv.example.com/',
+          },
+        ]
+      )
+    );
+    const m3u = buildIptvOrgM3u();
+    const lines = m3u.split('\n');
+    const urlIdx = lines.indexOf('https://ua.example.com/live.m3u8');
+    expect(urlIdx).toBeGreaterThan(-1);
+    // EXTVLCOPT 必须紧跟 URL 行之后（不能打断 EXTINF 与 URL 的配对）
+    expect(lines[urlIdx + 1]).toBe('#EXTVLCOPT:http-user-agent=okhttp/4.9.0');
+    expect(lines[urlIdx + 2]).toBe(
+      '#EXTVLCOPT:http-referrer=https://tv.example.com/'
+    );
+  });
+
   test('快照未就绪时抛错（路由层负责先拉取快照）', () => {
     __setCachedSnapshotForTest(null);
     expect(() => buildIptvOrgM3u()).toThrow('快照未就绪');
