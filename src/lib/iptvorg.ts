@@ -47,24 +47,35 @@ let cachedSnapshot: IptvOrgSnapshot | null = null;
 let cachedSnapshotPromise: Promise<IptvOrgSnapshot> | null = null;
 
 async function fetchJson(name: string): Promise<unknown> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-  try {
-    const response = await fetch(`${IPTVORG_BASE}/${name}`, {
-      signal: controller.signal,
-      cache: 'no-store',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; LunaTV)',
-        Accept: 'application/json',
-      },
-    });
-    if (!response.ok) {
-      throw new Error(`iptv-org ${name} 拉取失败: HTTP ${response.status}`);
+  // 网络抖动重试：Vercel→GitHub Pages 偶发连接超时，重试一次成本很低
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) {
+      await new Promise((r) => setTimeout(r, 1500));
     }
-    return (await response.json()) as unknown;
-  } finally {
-    clearTimeout(timer);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    try {
+      const response = await fetch(`${IPTVORG_BASE}/${name}`, {
+        signal: controller.signal,
+        cache: 'no-store',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; LunaTV)',
+          Accept: 'application/json',
+        },
+      });
+      if (!response.ok) {
+        throw new Error(`iptv-org ${name} 拉取失败: HTTP ${response.status}`);
+      }
+      return (await response.json()) as unknown;
+    } catch (error) {
+      lastError = error;
+      console.error(`iptv-org ${name} 第 ${attempt + 1} 次拉取失败:`, error);
+    } finally {
+      clearTimeout(timer);
+    }
   }
+  throw lastError;
 }
 
 function buildSnapshot(raw: {

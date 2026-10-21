@@ -77,12 +77,24 @@ export async function refreshLiveChannels(liveInfo: {
     delete cachedLiveChannels[liveInfo.key];
   }
   const ua = liveInfo.ua || defaultUA;
-  const response = await fetch(liveInfo.url, {
-    headers: {
-      'User-Agent': ua,
-    },
-  });
-  const data = await response.text();
+  // 拉取超时控制：避免管理端添加/页面加载无限挂起（如上游生成接口需拉取大量数据）
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 90_000);
+  let data: string;
+  try {
+    const response = await fetch(liveInfo.url, {
+      headers: {
+        'User-Agent': ua,
+      },
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(`直播源拉取失败: HTTP ${response.status}`);
+    }
+    data = await response.text();
+  } finally {
+    clearTimeout(timer);
+  }
   const result = parseM3U(liveInfo.key, data);
   const epgUrl = liveInfo.epg || result.tvgUrl;
   const epgs = await parseEpg(

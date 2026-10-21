@@ -5,6 +5,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getIptvOrgM3u } from '@/lib/iptvorg';
 
 export const runtime = 'nodejs';
+// Vercel 函数时长：内部需拉取 iptv-org 四个文件（约 17MB）并构建索引，给足时间
+export const maxDuration = 60;
 
 // iptv-org 公共源 m3u 生成接口：
 //   /api/iptvorg/m3u                       全部频道（默认 2000 条上限）
@@ -17,6 +19,13 @@ export const runtime = 'nodejs';
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Cache-Control': 'public, s-maxage=21600, stale-while-revalidate=86400',
+};
+
+// 错误响应绝不缓存——否则边缘会把一次失败结果缓存 6 小时，
+// 用户反复重导入都拿到同一个坏响应
+const ERROR_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Cache-Control': 'no-store',
 };
 
 export async function GET(request: NextRequest) {
@@ -39,7 +48,7 @@ export async function GET(request: NextRequest) {
     if (!m3u.includes('\n')) {
       return NextResponse.json(
         { error: '没有匹配的频道：请检查 country/category 过滤条件' },
-        { status: 404, headers: CORS_HEADERS }
+        { status: 404, headers: ERROR_HEADERS }
       );
     }
 
@@ -56,7 +65,7 @@ export async function GET(request: NextRequest) {
       {
         error: error instanceof Error ? error.message : 'iptv-org 数据拉取失败',
       },
-      { status: 502, headers: CORS_HEADERS }
+      { status: 502, headers: ERROR_HEADERS }
     );
   }
 }
